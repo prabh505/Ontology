@@ -1,0 +1,180 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Hash randomization is a named threat to the determinism guarantee (CONVENTIONS.md §11).
+env:
+  PYTHONHASHSEED: "0"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Law and boundary enforcement. These jobs need no services and no install, so
+  # they are separate: a law violation should fail in seconds, not after a build.
+  # ---------------------------------------------------------------------------
+  domain-independence:
+    name: domain-independence (LAW-DOMAIN)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Self-test the matcher
+        # Proves the lint fires on every form domain vocabulary takes in code -- plural,
+        # snake_case, SCREAMING_SNAKE, camelCase, PascalCase -- and stays clean on
+        # `reorder`, `recorder`, `border`, `ordinal`. It also refuses a claimed false
+        # positive that actually contains a banned stem, which is the DEF-0001 root cause.
+        run: python scripts/check_domain_independence.py --self-test
+      - name: Scan reasoning packages
+        run: python scripts/check_domain_independence.py
+
+  layer-boundaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Self-test the rules
+        # Proves each of F1-F9 rejects a synthetic import and each permitted edge does not.
+        run: python scripts/check_layers.py --self-test
+      - run: python scripts/check_layers.py
+
+  dependency-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Self-test the rules
+        # Proves a range pin, an ADR-less package, and a blocked library each fail.
+        run: python scripts/check_dependency_policy.py --self-test
+      - run: python scripts/check_dependency_policy.py
+
+  law-copies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Self-test the comparison
+        # Proves a planted divergence and a missing law are both detected. Until DEF-0001
+        # this check was only ever observed to pass.
+        run: python scripts/check_law_copies.py --self-test
+      - run: python scripts/check_law_copies.py
+
+  governance-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Self-test the rules
+        # Proves each inconsistency shape is rejected, including the OQ-004 / OQ-008 class:
+        # a question still listed open while the ADR that answers it is already accepted.
+        run: python scripts/check_governance_consistency.py --self-test
+      - run: python scripts/check_governance_consistency.py
+
+  # ---------------------------------------------------------------------------
+  # Python
+  # ---------------------------------------------------------------------------
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e "backend[dev]"
+      - run: ruff check backend scripts
+      - run: ruff format --check backend scripts
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e "backend[dev]"
+      - run: mypy
+        working-directory: backend
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e "backend[dev]"
+      - name: Unit, law, and determinism tests
+        run: pytest tests/unit tests/law tests/determinism
+        working-directory: backend
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.6-alpine
+        env:
+          POSTGRES_USER: causalog
+          POSTGRES_PASSWORD: causalog
+          POSTGRES_DB: causalog
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U causalog" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+      neo4j:
+        image: neo4j:5.26.0-community
+        env:
+          NEO4J_AUTH: neo4j/causalog-local
+        ports: ["7687:7687"]
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p causalog-local 'RETURN 1'"
+          --health-interval 10s --health-timeout 10s --health-retries 15
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 12
+    env:
+      CAUSALOG_POSTGRES_DSN: postgresql://causalog:causalog@localhost:5432/causalog
+      CAUSALOG_NEO4J_URI: bolt://localhost:7687
+      CAUSALOG_REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e "backend[dev]"
+      - name: Integration, pipeline, graph, ontology, counterfactual, and API tests
+        run: pytest tests/integration tests/pipeline tests/graph tests/ontology tests/counterfactual tests/api
+        working-directory: backend
+
+  determinism:
+    runs-on: ubuntu-latest
+    # NOT a soft gate by intent. `check_determinism.py` exits 2 while no pipeline entry
+    # point exists, and this job is tolerated ONLY for that reason -- the log states the
+    # gap loudly rather than letting a missing gate look like a passing one. Remove
+    # continue-on-error at the P1 exit, when the pipeline becomes runnable.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e "backend[dev]"
+      - run: python scripts/check_determinism.py
+
+  # ---------------------------------------------------------------------------
+  # Frontend
+  # ---------------------------------------------------------------------------
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run: {working-directory: frontend}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: "22"}
+      - run: npm install --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run typecheck

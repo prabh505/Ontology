@@ -1,0 +1,18 @@
+# LAW-DOMAIN allowlist (CONVENTIONS.md §6, ADR-0019).
+#
+# Format:  <repo-relative path>::<exact matched text>  # one-line justification
+#
+# The second field is the EXACT text the lint matched, lowercased -- `warehouse_id`, not
+# the `warehous` stem. An entry exempts one specific occurrence and must never cover a
+# family: keying on the stem would let one reviewed exception silently admit every
+# inflection of a banned concept.
+#
+# This is a pressure valve, not a bypass. Every entry is reviewed. An entry without a
+# justification fails the lint. An empty allowlist is the healthy state -- prefer
+# rewording over adding a line here.
+#
+# On the `order` stem specifically (ADR-0019): the whole stem is banned with no suffix
+# exceptions, so `ordering` and `ordered` are unusable in reasoning packages including in
+# comments. Write "sequence", "sequenced", or "sorted" instead. The one case expected to
+# need an entry here is a SQL or Cypher `ORDER BY` literal, which CONVENTIONS.md §11
+# mandates on every query feeding the pipeline; such an entry is legitimate and must say so.

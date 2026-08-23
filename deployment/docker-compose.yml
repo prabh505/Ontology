@@ -1,0 +1,124 @@
+# Local development stack. Every service has a healthcheck, because `make up` waits on
+# them and a backend that starts before PostgreSQL is ready fails in a way that looks
+# like a code defect.
+#
+# Every published host port is overridable. A developer machine frequently already runs a
+# PostgreSQL or a Redis on the conventional port, and "port is already allocated" should be
+# fixed by setting a variable, not by editing this file or by stopping someone else's
+# container. See `deployment/.env.example`.
+name: causalog
+
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_USER: causalog
+      POSTGRES_PASSWORD: causalog
+      POSTGRES_DB: causalog
+      # Deterministic collation: text sequencing participates in canonical sort keys.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Migrations ARE the init directory: PostgreSQL runs *.sql there in lexical
+      # sequence on first initialization, which is exactly the NNNN_ naming
+      # (CONVENTIONS.md §5). It does not recurse into subdirectories, so migrations
+      # cannot be nested one level down.
+      - ./sql/migrations:/docker-entrypoint-initdb.d:ro
+      # Seeds are mounted but NOT auto-applied. Fixture rows are applied deliberately
+      # (`make seed`), never as a side effect of starting a container.
+      - ./sql/seeds:/seeds:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U causalog -d causalog"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  neo4j:
+    image: neo4j:5.26.0-community
+    # Declared so an out-of-memory kill is attributable to THIS container rather than
+    # leaving the kernel to pick a victim among every container on the host. Sized to the
+    # JVM budget below (heap 512M + pagecache 256M) plus overhead. If neo4j exits 137, it
+    # exceeded this limit; if another service dies instead, the host itself is short.
+    mem_limit: 1g
+    environment:
+      NEO4J_AUTH: neo4j/causalog-local
+      # Sized for a laptop running all five services at once. Neo4j defaults assume it
+      # owns the machine and gets OOM-killed here otherwise (observed: exit 137).
+      # Production sizing is a deployment concern, not a compose-file default.
+      NEO4J_server_memory_heap_initial__size: 512M
+      NEO4J_server_memory_heap_max__size: 512M
+      NEO4J_server_memory_pagecache_size: 256M
+    ports: ["${NEO4J_HTTP_PORT:-7474}:7474", "${NEO4J_BOLT_PORT:-7687}:7687"]
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p causalog-local 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  redis:
+    image: redis:7.4-alpine
+    # Cache only. Nothing here is a source of truth (ADR-0001), so no persistence.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports: ["${REDIS_PORT:-6379}:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deployment/docker/backend.Dockerfile
+    environment:
+      PYTHONHASHSEED: "0"
+      CAUSALOG_POSTGRES_DSN: postgresql://causalog:causalog@postgres:5432/causalog
+      CAUSALOG_NEO4J_URI: bolt://neo4j:7687
+      CAUSALOG_NEO4J_AUTH: neo4j/causalog-local
+      CAUSALOG_REDIS_URL: redis://redis:6379/0
+    ports: ["${BACKEND_PORT:-8000}:8000"]
+    volumes:
+      - ../ontology:/app/ontology:ro
+      - ../rule_engine:/app/rule_engine:ro
+      - ../datasets:/app/datasets:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+      neo4j: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deployment/docker/frontend.Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports: ["${FRONTEND_PORT:-3000}:3000"]
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      # node:*-slim ships no wget or curl, so the probe uses the runtime that is
+      # guaranteed present. Node 22 has a global fetch.
+      test:
+        ["CMD", "node", "-e",
+         "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      # `next dev` compiles on first boot; 90s is measured, not guessed.
+      start_period: 120s
+
+volumes:
+  postgres_data:
+  neo4j_data:

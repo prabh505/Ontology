@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+backend/.venv/
+backend/.pytest_cache/
+backend/.mypy_cache/
+.ruff_cache/
+backend/.ruff_cache/
+coverage.xml
+.coverage
+.coverage.*
+*.egg-info/
+
+# Determinism scratch (scripts/check_determinism.py)
+.determinism/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/next-env.d.ts
+
+# Datasets are pinned by hash, never committed (datasets/README.md)
+datasets/raw/
+
+# Local environment
+.env
+.env.local
+
+# OS and editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

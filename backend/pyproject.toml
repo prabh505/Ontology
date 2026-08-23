@@ -1,0 +1,125 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "causalog"
+version = "0.1.0"
+description = "A domain-agnostic causal intelligence engine."
+requires-python = ">=3.12"
+
+# Every pin is exact (CONVENTIONS.md §12: no ranges, no `latest`).
+# Every package here is justified in ADR-0015. Adding one without an ADR is a defect,
+# and `scripts/check_dependency_policy.py` fails the build if this list and the ADR
+# disagree.
+dependencies = [
+  "pydantic==2.10.4",       # the chosen data-validation library (CONVENTIONS.md §12)
+  "fastapi==0.115.6",       # module 16 HTTP surface
+  "uvicorn==0.34.0",        # ASGI server for the API container
+  "networkx==3.4.2",        # deterministic graph algorithms (prd.md §41)
+  "psycopg[binary]==3.2.3", # PostgreSQL driver, system of record (ADR-0001)
+  "neo4j==5.27.0",          # graph projection driver (ADR-0001)
+  "redis==5.2.1",           # derived-cache driver (ADR-0001)
+  "PyYAML==6.0.2",          # ontology and rule-pack data loading
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff==0.8.6",
+  "mypy==1.14.1",
+  "pytest==8.3.4",
+  "pytest-cov==6.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/causalog"]
+
+# ---------------------------------------------------------------------------
+# ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # import sorting -- deterministic import sequence
+  "N",        # pep8-naming, matching CONVENTIONS.md §5
+  "UP",       # pyupgrade
+  "B",        # bugbear
+  "A",        # builtin shadowing
+  "C4",       # comprehensions
+  "DTZ",      # flake8-datetimez -- naive datetimes are a defect (CONVENTIONS.md §10)
+  "T20",      # no print() in library code; logging is structured JSON (§8)
+  "SIM",
+  "PTH",
+  "RUF",
+  "ANN",      # every signature is annotated
+  "D",        # docstrings: every package states its responsibility
+  "TRY",      # no bare except, no swallowed exception (CONVENTIONS.md §7)
+  "BLE",      # blind except
+  "S",        # bandit
+]
+ignore = [
+  "D203", "D213",  # incompatible docstring conventions; D211/D212 are selected instead
+  "D401",          # imperative-mood check is too noisy on contract docstrings
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "D103", "ANN201"]           # asserts and terse test names are expected
+"tests/**/__init__.py" = ["D104"]                 # the test mirror is structure, not prose
+"scripts/**" = ["T201"]                  # enforcement scripts report to stdout
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# ---------------------------------------------------------------------------
+# mypy -- strict for every reasoning package (CONVENTIONS.md §3)
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+packages = ["causalog"]
+strict = true
+warn_unreachable = true
+disallow_any_unimported = true
+# `disallow_any_explicit` is deliberately NOT set: pydantic's model base is generic over
+# Any, so it would fail on every canonical type without catching a single real defect.
+# `strict = true` already forbids untyped defs, implicit Any returns, and untyped calls.
+implicit_reexport = false
+show_error_codes = true
+pretty = true
+
+[[tool.mypy.overrides]]
+# Drivers ship partial or absent stubs. Strictness is preserved for our own code; only
+# the third-party surface is relaxed, and only for the adapter packages that touch it.
+module = ["neo4j.*", "psycopg.*", "redis.*", "networkx.*", "yaml.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers --strict-config --cov=causalog --cov-report=term-missing --cov-report=xml"
+markers = [
+  "law: asserts one of the Five Inviolable Laws; a failure is CRITICAL",
+  "determinism: asserts byte-identical reruns",
+  "slow: excluded from `make test-fast`",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["causalog"]
+
+[tool.coverage.report]
+# Reported, never the gate. The gate is failure-mode coverage (CONVENTIONS.md §14).
+# This floor exists only to catch a collection collapse, not to measure quality.
+fail_under = 0
+show_missing = true
+skip_covered = false
