@@ -1,0 +1,59 @@
+# The shared base pack. Structure only -- no domain declares itself here.
+#
+# What lives in a base pack is exactly what is true of every domain: the ordinal
+# vocabularies that ranking needs (cost and severity), with their ranks. A domain overlay
+# extends this and adds its own entity types, event types, processes and measurements.
+#
+# LAW-DOMAIN, read the other way round: if a declaration here named a concept from any one
+# domain, every future domain would inherit that domain's assumptions.
+#
+# Overlay semantics (ADR-0027): an overlay entry REPLACES the base entry with the same
+# identifier, wholesale. A base entry is withdrawn only through an explicit `removes:`
+# block. There is no field-level merge.
+
+pack_schema_version: "1.0.0"
+pack_id: _base
+ontology_version: "1.0.0"
+description: >-
+  Structural base for every CausaLog domain pack. Declares the ordinal cost and severity
+  vocabularies that root-cause ranking and intervention costing read, and nothing else.
+
+# Ordinal intervention cost bands (CONTEXT.md OQ-013). Provenance is ASSUMED wherever these
+# are applied: no dataset establishes what an intervention costs. `rank` carries the
+# sequence so a ranker compares members without reading their names.
+cost_classes:
+  - id: NEGLIGIBLE
+    rank: 0
+    description: An action an operator can take within an existing workflow at no marginal cost.
+  - id: LOW
+    rank: 1
+    description: An action requiring operator attention but no additional resource.
+  - id: MODERATE
+    rank: 2
+    description: An action requiring reallocation of an existing resource.
+  - id: HIGH
+    rank: 3
+    description: An action requiring additional resource or an exception to a standing policy.
+  - id: PROHIBITIVE
+    rank: 4
+    description: >-
+      An action the organization can take in principle and will not take in practice.
+      Declared so that ranking can rank it last rather than omit it silently.
+
+# Ordinal severity bands. Read by root-cause ranking alongside impact; never inferred.
+severity_classes:
+  - id: INFORMATIONAL
+    rank: 0
+    description: The occurrence is recorded for traceability and has no consequence by itself.
+  - id: MINOR
+    rank: 1
+    description: A consequence absorbed within normal operating tolerance.
+  - id: MODERATE
+    rank: 2
+    description: A consequence visible to an operator and requiring a decision.
+  - id: MAJOR
+    rank: 3
+    description: A consequence visible to the party the process serves.
+  - id: CRITICAL
+    rank: 4
+    description: A consequence that terminates the process without its intended outcome.

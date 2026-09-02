@@ -6,10 +6,11 @@
 > about intent. `CONTEXT.md` is the truth about current state. The code is the truth about
 > what is.
 >
-> **Status.** Every interface named here is `draft`. Nothing may be marked `frozen` until
-> the module contract document exists (`CONTEXT.md` OQ-009). Where this document adopts an
-> Open Question's proposed default rather than a ratified decision, it says so inline and
-> names the OQ.
+> **Status.** The `causalog.core` interfaces are **frozen** as of 2026-08-25 (ADR-0025);
+> their specification is `docs/contracts.md` v1.0.0, which is the module contract document
+> OQ-009 required. Every other interface named here is still `draft`. Where this document
+> adopts an Open Question's proposed default rather than a ratified decision, it says so
+> inline and names the OQ.
 >
 > **Authority.** Where this document and `CONVENTIONS.md` disagree, `CONVENTIONS.md`
 > governs *how* and this document governs *what depends on what* — and the disagreement is
@@ -51,7 +52,7 @@ is a defect.
 | L8 | `explanation_engine` | Render graph evidence into language | 15 Explanation Generator |
 | L9 | `orchestration` | Compose a Run by wiring adapters into the pipeline | — |
 | L10 | `api` | Expose results as structured JSON | 16 Visualization API |
-| — | `persistence` | Implement L0 ports against PostgreSQL, Neo4j, Redis | — |
+| — | `persistence` | Implement L0 ports against PostgreSQL, Neo4j, Redis | — (built 2026-08-29; `docs/data-model.md`) |
 | — | `frontend` | Render the six workspaces (prd.md §51) | — |
 
 `persistence` is deliberately **not** a layer. It is a set of driven adapters implementing
@@ -99,7 +100,9 @@ Honest limits, so nobody mistakes a green build for a proof:
 - **Domain leakage through data.** A reasoning package that branches on the *value* of an
   `event_type` string is domain-dependent while containing no banned token. LAW-DOMAIN
   catches vocabulary, not the pattern. This is the residual risk ADR-0002 accepts, and it
-  is the reason `tests/ontology/test_ontology_swap.py` exists as a separate obligation.
+  is why `tests/ontology/test_ontology_swap.py` is carried as a separate obligation. That
+  file does **not** exist yet -- it lands with module 2, and §8 tracks it. Until then this
+  residual is disclosed and unmeasured, not covered.
 - **Vocabulary in a non-scanned file type.** The lint reads `.py`, `.md`, `.sql`, and
   `.cypher` under the reasoning packages. Tracked as OQ-016.
 
@@ -138,7 +141,7 @@ missing data; and what it is explicitly forbidden from doing.
 
 - **Responsibility.** Bind dataset columns and values to ontology concepts.
 - **Input.** `RawRecordBatch`, `OntologySpec`, `SchemaMappingSpec`
-- **Output.** `MappedRecordBatch` (records whose fields carry ontology concept names)
+- **Output.** `MappedRecordBatch` (records whose fields carry ontology concept names), via `apply_mapping`; plus `CoverageReport`
 - **Invariants.** Every field either resolves to a declared concept or raises. `ontology_hash` is stamped on the output. The mapping is total over the columns the spec declares and explicit about the columns it drops.
 - **Failure modes.** An unmapped column or value is an `OntologyMappingError` naming the value — **never a default, never a guess, never a fall-through to a catch-all** (`CONVENTIONS.md` §7). A declared-but-absent column is a hard error, because it means the dataset is not the dataset the mapping was written for. Partial data: a null in a mapped column is passed through as absent, not as a concept.
 - **Forbidden from.** Inventing a concept. Emitting an `Event`. Being the last chance to catch an ontology mismatch and instead deferring it downstream. **This is the last module permitted to hold a row.**
@@ -148,20 +151,24 @@ missing data; and what it is explicitly forbidden from doing.
 ### Module 3 — Entity Extractor · `extraction/entity_extractor` · L3
 
 - **Responsibility.** Derive `Entity` values from mapped records.
-- **Input.** `MappedRecordBatch`, `OntologySpec`
-- **Output.** `tuple[Entity, ...]` sequenced by `entity_id`
+- **Input.** `MappedRecordBatch`, `OntologySpec`, `SchemaMappingSpec`, `ConflictPolicy`
+- **Output.** `ExtractionResult`: `tuple[Entity, ...]` sequenced by `entity_id`, `tuple[EntityHistory, ...]`, and a `ReconciliationReport`
 - **Invariants.** `entity_id = digest(ENTITY, ontology_hash | entity_type | natural_key)` — content-addressed, so the same participant in two batches is one entity. Entities are immutable. `provenance_class` is `OBSERVED`.
 - **Failure modes.** A record with no derivable natural key yields no entity and increments a counter; it is not an error, because a source frequently references a participant it does not describe. An identifier collision on differing payloads is a `CRITICAL` defect, never a retry (`CONVENTIONS.md` §9). Partial data: absent attributes are absent, never null-filled.
 - **Forbidden from.** Deriving an `Event`. Merging two entities on a similarity heuristic — identity is content-addressed or it is not identity. Mutating an entity to reflect a later record.
+- **Reconciliation (ADR-0039).** Two records agreeing about WHO and disagreeing about WHAT are resolved by a declared `ConflictPolicy` — `FIRST_WINS` (default), `LAST_WINS`, `REJECT`. The policy decides which value the entity carries and **never** whether the disagreement is reported: every conflict reaches the `ReconciliationReport` under every policy that tolerates one. Attribute history is a separate artifact keyed by `entity_id`, because the entity's content address excludes its attributes and a version carried inside would either mutate a frozen artifact or rename the participant.
 
 ---
 
 ### Module 4 — Event Generator · `extraction/event_generator` · L3
 
 - **Responsibility.** Emit zero or more `Event` values per evidence record.
-- **Input.** `MappedRecordBatch`, `tuple[Entity, ...]`, `OntologySpec`
-- **Output.** `tuple[Event, ...]` sequenced by `(t_earliest, t_latest, event_id)`
-- **Invariants.** Every event carries a non-empty `evidence_record_ids`, exactly one `TimeInterval`, and `provenance_class = OBSERVED`. Events are immutable: a correction emits a new event, never a mutation (ADR-0004). `trigger` is the proximate mechanism recorded *on* the event and is never a causal claim (OQ-012 default in use).
+- **Input.** `MappedRecordBatch` (re-iterable: generation makes two passes), `tuple[Entity, ...]`, `OntologySpec`, `SchemaMappingSpec`, `MissingEventPolicy`
+- **Output.** `GenerationResult`: `tuple[Event, ...]` sequenced by `(t_earliest, t_latest, event_id)`, and an `EventQualityReport`
+- **Invariants.** Every event carries a non-empty `evidence_record_ids` and exactly one `TimeInterval`. **`provenance_class` is the one the event's ontology type declares, and no heuristic may produce an `OBSERVED` event (ADR-0041, correcting this row; ADR-0029).** Events are immutable: a correction emits a new event, never a mutation (ADR-0004). `trigger` is the proximate mechanism recorded *on* the event and is never a causal claim (OQ-012 default in use). **One occurrence is one event, however many records witness it**: records agreeing on type, participants, interval and recorded attributes corroborate one occurrence and become one event citing all of them.
+- **CORRECTION, on the record rather than overwritten (ADR-0041).** The invariant above previously read `provenance_class = OBSERVED`. That was false against ADR-0029, which declares one OBSERVED event type in the DataCo pack and nineteen DERIVED ones that may never claim OBSERVED. This document predated the pack. Implementing the row as written would have put nineteen fabricated observations into the system of record with real columns standing behind them.
+- **Emission (ADR-0039).** Which records witness which occurrence is DATA: one `event_emissions` rule per event type in `mapping.yaml`, a closed condition operator tree over ontology addresses plus a declared `occurred_at` policy. An emission rule names no provenance class and no participants, so neither can be got wrong there.
+- **Missing events (ADR-0040).** A step a process definition expects and no field supports is, by default, **recorded as a gap and not emitted**. `EMIT_GAP_MARKER` is selectable and emits an unplaced marker with zero rule support. The active policy is stamped into the `EventQualityReport`.
 - **Failure modes.** A missing timestamp yields `precision = UNKNOWN` with `provenance = ASSUMED` — **never imputed**, not to `now()`, not to epoch, not to the previous event's time (`CONVENTIONS.md` §10, ADR-0007). Imputation manufactures causality out of nothing. A day-granularity timestamp yields an interval spanning the day. An event type absent from the ontology is a hard error, and so is an event type with no `actionable` declaration (ADR-0008). Partial data: a record that describes no event legitimately emits zero events, counted in the summary.
 - **Forbidden from.** Emitting a causal edge. Emitting a `State`. Collapsing an interval to a point. **Letting a row, a DataFrame, or a column cross its output boundary — this module IS the LAW-EVENT boundary.**
 - **Risk note.** ADR-0004 names this the highest-risk module in the system: a row-to-events mapping error is invisible downstream and corrupts every conclusion.
@@ -212,6 +219,45 @@ missing data; and what it is explicitly forbidden from doing.
 
 ---
 
+### The Rule Engine · `rule_engine` · L5 — *mechanism, not a §36 module*
+
+Not one of the sixteen. It is the mechanism prd.md §46 requires ("rule syntax should be
+configurable; never hardcode logistics logic into source code"), and it is extension seam 4
+of §5.1. Built 2026-09-01 (ADR-0044 through ADR-0047). Given a contract entry here because
+module 9 depends on it and a seam with no stated contract is one every consumer guesses at.
+
+- **Responsibility.** Evaluate a rule pack over observed facts, producing traced firings.
+- **Input.** `RulePackSpec` (data, `rule_engine/<domain>/rules.yaml`), `GraphFacts`,
+  and — for validation only — a `VocabularyView` from `core.ontology_view`.
+- **Output.** `EvaluationResult`: `tuple[RuleFiring, ...]` sequenced by
+  `(rule_id, matched_event_ids, bindings)`, a `ConflictReport`, and `EvaluationStatistics`.
+- **Invariants.** **A firing that cannot explain itself cannot be constructed** — `RuleFiring`
+  refuses an empty trace for a non-trivial condition, so an unexplainable firing does not
+  exist to be persisted, scored or shown (ADR-0047). A pack that contradicts itself raises
+  `RuleConflictError` at **load**, never at evaluation. Evaluation is deterministic and
+  indexed: cost is linear in the inputs plus the output, never quadratic in the event count,
+  and the bound is asserted against a returned counter rather than claimed in a comment.
+  Constraints beat generators, and **every suppression is reported** rather than silently
+  applied.
+- **Failure modes.** A rule naming an undeclared type, role, state or attribute is an
+  `ERROR` that refuses the pack, with every error reported together. A rule whose event type
+  no emission rule can witness is a `WARNING` — the rule is dead data, and nothing else in
+  the system would say so. A missing vocabulary makes the reference checks report
+  `NOT_RUNNABLE`, never pass. Partial data: an absent attribute makes every comparison
+  false, including `NOT_EQUALS` — a claim about a value nobody recorded is not supported by
+  its absence, and `IS_ABSENT` is what tests for absence.
+- **Forbidden from.** Creating a `CausalEdge` — module 9 owns that and the LAW-TIME gate;
+  this layer stamps the verdict and stops. Assigning confidence. **Reading `Event.trigger`**
+  (ADR-0020), asserted over the AST in `tests/law/`. Importing `ontology_runtime`: it is L5
+  and forbidden edge F3 blocks it, which is why vocabulary arrives as a plain `core` view.
+  Suppressing an `UNDETERMINED` verdict.
+- **Risk note.** A valid rule pack can be a wrong rule pack, for the reason `docs/ontology.md`
+  §6 gives about ontologies: nothing here checks that a claimed mechanism is real, that a
+  window is the right width, or that a weight is calibrated. Tracked as risk R-16. Coverage
+  is measurable and is measured; correctness is neither.
+
+---
+
 ### Module 9 — Candidate Cause Generator · `causal_engine/candidate_cause_generator` · L6
 
 - **Responsibility.** Propose temporally admissible `CandidateEdge` values between events.
@@ -228,7 +274,7 @@ missing data; and what it is explicitly forbidden from doing.
 - **Responsibility.** Decompose each candidate edge's support into named confidence components.
 - **Input.** `tuple[CandidateEdge, ...]`, `TemporalPropertyGraph`, `RulePack`
 - **Output.** `CausalGraph` — edges carrying `ConfidenceVector` and `EvidenceRecord` references
-- **Invariants.** **Owns the LAW-EVIDENCE gate.** Every component is named, valued, provenance-classed, and traced to evidence record identifiers. Components are sequenced by `component_name`; values are quantized to six decimal places at every serialization boundary. The scalar rollup is derived and non-authoritative (OQ-005 default in use, pending ADR-0009). Statistical association is a **named component** carrying `STATISTICAL`, never silently promoted to `INFERRED` (ADR-0003). **This is the only module permitted to write `CAUSES`.**
+- **Invariants.** **Owns the LAW-EVIDENCE gate.** Every component is named, valued, provenance-classed, and traced to evidence record identifiers. Components are sequenced by `component_name`; values are quantized to six decimal places at every serialization boundary. The scalar rollup is derived and non-authoritative, and names the aggregation function that produced it (ADR-0009, closing OQ-005). Statistical association is a **named component** carrying `STATISTICAL`, never silently promoted to `INFERRED` (ADR-0003). **This is the only module permitted to write `CAUSES`.**
 - **Failure modes.** An edge with no supporting component gets an explicit zero-support vector, not an empty one — an empty vector is a defect, not zero confidence. A component that cannot be traced to evidence means the module is not done (`CONVENTIONS.md` §8). Partial data: sparse history yields a low historical-support component with its evidence count stated, never a suppressed component.
 - **Forbidden from.** Emitting a bare float. Merging provenance classes. Promoting an `UNDETERMINED` candidate. Overwriting an `OBSERVED` value.
 
@@ -319,6 +365,9 @@ The decision rule for a new piece of state, in one line: *if losing it would cha
 answer, it belongs in PostgreSQL; if losing it would only change how fast an answer
 arrives, it belongs in Redis; if it exists to be traversed, it is projected into Neo4j from
 PostgreSQL.*
+
+The realised schema — every table, the bi-temporal columns, the indexes with their
+justifying queries, and the graph model — is `docs/data-model.md`.
 
 ### 3.2 Consistency model
 
@@ -437,12 +486,17 @@ A new domain implements these and nothing else. None of them lives in a reasonin
 
 | # | Seam | Kind | Location |
 |---|---|---|---|
-| 1 | `SourceReader` | Python Protocol | `core/ports/source.py` — implemented under `persistence/` or a small adapter package |
-| 2 | `OntologySpec` | **data** | `ontology/<domain>/ontology.yaml` |
-| 3 | `SchemaMappingSpec` | **data** | `ontology/<domain>/mapping.yaml` |
-| 4 | `RulePack` | **data** | `rule_engine/<domain>/` |
-| 5 | `CostModel` | **data** | `ontology/<domain>/cost.yaml` |
-| 6 | `PresentationLabels` | **data** | `ontology/<domain>/labels.yaml` |
+| 1 | `SourceReader` | Python Protocol | declared in `core/ports/source.py`; implemented in `persistence/sources/<domain>.py` |
+| 2 | `OntologySpec` | **data** | `ontology/packs/<domain>/ontology.yaml` |
+| 3 | `SchemaMappingSpec` | **data** | `ontology/packs/<domain>/mapping.yaml` |
+| 4 | `RulePack` | **data** | `rule_engine/<domain>/rules.yaml` |
+| 5 | `CostModel` | **data** | `ontology/packs/<domain>/cost.yaml` |
+| 6 | `PresentationLabels` | **data** | `ontology/packs/<domain>/labels.yaml` |
+
+Paths moved from `ontology/<domain>/` to `ontology/packs/<domain>/` in **ADR-0027**, so that
+the generated schema (`ontology/_schema/`) and the structural base pack (`_base`) are not
+siblings of real domains. The seams themselves are unchanged. The full pack schema is
+specified in `docs/ontology.md`; the onboarding procedure is its §4.
 
 Five of the six are data files. Exactly one is code, and it is an adapter that reads bytes —
 it contains no reasoning.
@@ -453,26 +507,37 @@ it contains no reasoning.
 `patient_ref`, `ward_code`, `admitted_on`, `test_ordered_at`, `result_returned_at`,
 `discharge_ready_at`, `discharged_at`, `clinician_ref`.
 
-**Step 1 — `SourceReader` (≈40 lines of adapter code).** Reads the CSVs in filename
-sequence, emits `RawRecordBatch` values, computes `dataset_version` from the file hashes.
-It knows about files, not about medicine.
+**Step 1 — `SourceReader`: `persistence/sources/hospital.py`, ≈40 lines.** Reads the CSVs
+in filename sequence, emits `RawRecordBatch` values, computes `dataset_version` from the
+file hashes. It knows about files, not about medicine.
 
-**Step 2 — `ontology.yaml`.**
+**This is the one file.** Asked "which single file changes if the domain becomes
+hospitals?", the answer is that path and nothing else in the distribution. It may name
+`ward_code` because `persistence/` is outside LAW-DOMAIN's scan; F4 stops any reasoning
+package importing it; F7 permits its `csv` import because `persistence` has no layer rank.
+Everything else a hospital needs is data — Steps 2 through 5 below.
+
+**Step 2 — `ontology.yaml`.** A worked, loadable example of exactly this is shipped at
+`ontology/packs/hospital/ontology.yaml` — the sketch below predates ADR-0026 and is kept
+only as an outline of the shape. The real schema is `docs/ontology.md` §2, and a pack
+declares considerably more than states and transitions: participants by role, pre- and
+postconditions, process definitions, measurement operator trees, and declared actionability.
 
 ```yaml
+pack_schema_version: "1.0.0"
+pack_id: hospital
 ontology_version: "1.0.0"
-entity_types: [PATIENT, EPISODE, WARD, CLINICIAN, DIAGNOSTIC_TEST]
-event_types:
-  - ADMISSION_RECORDED
-  - TEST_REQUESTED
-  - RESULT_RETURNED
-  - DISCHARGE_AUTHORIZED
-  - DISCHARGE_COMPLETED
-states: [AWAITING_ASSESSMENT, AWAITING_RESULT, FIT_FOR_DISCHARGE, DISCHARGED]
-legal_transitions:
-  - [AWAITING_ASSESSMENT, AWAITING_RESULT]
-  - [AWAITING_RESULT, FIT_FOR_DISCHARGE]
-  - [FIT_FOR_DISCHARGE, DISCHARGED]
+extends: _base
+entity_types:
+  - id: PATIENT
+    identifying_keys: [patient_reference]
+    lifecycle:
+      states: [ARRIVED, TRIAGED, AWAITING_BED, IN_BED, UNDER_TREATMENT, DISCHARGED]
+      initial_states: [ARRIVED]
+      terminal_states: [DISCHARGED]
+      transitions:
+        - {from: ARRIVED, to: TRIAGED, triggered_by: TRIAGED}
+        # ...
 ```
 
 **Step 3 — `mapping.yaml`.** `episode_ref → EPISODE.natural_key`,
@@ -480,15 +545,30 @@ legal_transitions:
 `discharge_ready_at → DISCHARGE_AUTHORIZED.occurred_at`, and so on. Any column not listed
 must appear under `dropped_columns` with a reason; an unlisted column is a hard error.
 
-**Step 4 — the rule pack.**
+**Step 4 — the rule pack.** The sketch below predates ADR-0044 and is kept only as an
+outline of the shape; the real schema is `causalog.rule_engine.dsl`, normative as pydantic
+models exactly as the ontology and mapping DSLs are, and a shipped example is
+`rule_engine/dataco/rules.yaml`. A real rule declares considerably more than a pattern: a
+rationale, an author, a knowledge provenance and its evidence basis, a weight, an explicit
+temporal window with its boundary semantics as data, and a condition tree over role-bound
+addresses.
 
 ```yaml
+rule_pack_schema_version: "1.0.0"
 rule_pack_version: "1.0.0"
 rules:
   - id: R-LAB-TURNAROUND
-    when:  {cause_type: TEST_REQUESTED, effect_type: DISCHARGE_AUTHORIZED}
-    requires: [SHARED_ENTITY(EPISODE), TEMPORAL_PRECEDENCE]
-    edge_type: CAUSES
+    kind: CAUSAL
+    # ... description, rationale, author, knowledge_provenance, evidence_basis,
+    #     base_strength
+    body:
+      cause:  {binding: CAUSE,  event_type: TEST_REQUESTED}
+      effect: {binding: EFFECT, event_type: DISCHARGE_AUTHORIZED}
+      window: {minimum_seconds: 0, maximum_seconds: 86400}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
 ```
 
 **Step 5 — `cost.yaml` and `labels.yaml`.** Ordinal cost bands per intervention kind;
@@ -680,7 +760,7 @@ Recorded here and in `CONTEXT.md` §9. Each names the trigger that reopens it.
 | # | Risk accepted | Trigger to revisit |
 |---|---|---|
 | 1 | **Projection rebuild sits on the critical path.** Neo4j being a derived projection means graph availability is bounded by rebuild time, against a prd.md §55 target of under 60 seconds. | The first measured full rebuild exceeding 60s on the DataCo dataset, or any need to rebuild during a user-facing request. |
-| 2 | **Recall is bounded by rule coverage, and the system cannot report what it missed.** ADR-0003 defers ML; a causal relationship not expressible as a rule is invisible, and its absence is silent. | A user-visible false-negative that matters, or the arrival of any labelled causal ground truth against which recall becomes measurable. |
+| 2 | **Recall is bounded by rule coverage, and the system cannot report what it missed.** ADR-0003 defers ML; a causal relationship not expressible as a rule is invisible, and its absence is silent. **Partially addressed 2026-09-01 (ADR-0044):** the coverage report names every declared event type no rule explains, and the `ConflictReport` names every candidate a constraint suppressed — two classes of absence that are no longer silent. The residual is unchanged and is the larger half: a mechanism nobody wrote a rule for is still invisible, and no report can name what nobody thought of. | A user-visible false-negative that matters, or the arrival of any labelled causal ground truth against which recall becomes measurable. |
 | 3 | **`UNDETERMINED` may dominate the causal graph.** ADR-0007 retains temporally ambiguous edges rather than guessing; on a day-granularity dataset most candidates may be unpromotable, leaving the headline output thin. The ordering information is simply not in the data. | The first measured run where `UNDETERMINED` exceeds the promotable share — at which point the answer is a better-resolved dataset, never a looser test. |
 | 4 | **A mis-declared `actionable` flag is undetectable.** ADR-0008 ranks on ontology configuration with no ground truth to validate it against. | Recurring disputes about the ranking, or any case where the flag and the intervention catalogue disagree. |
 | 5 | **`core/` purity costs debuggability.** No reasoning package may name what it reasons about, so error messages and traces are abstract by construction, and the English word that collides with the banned vocabulary cannot be used even in a comment. | Sustained evidence that incident diagnosis is slowed by abstract errors — at which point the fix is richer structured context on errors, never a relaxation of LAW-DOMAIN. |
@@ -696,8 +776,10 @@ This document creates the following obligations. Each is either satisfied now or
 | The layer rank table matches `scripts/check_layers.py` | satisfied; divergence is a defect |
 | Forbidden edges F1–F9 are enforced, not documented only | satisfied |
 | LAW-DOMAIN lint exists, fails the build, and catches identifier forms | satisfied since ADR-0019; the first implementation did not (DEF-0001) |
-| Every enforcement script is observed to reject, not merely to pass | satisfied — `--self-test` on all four law scripts, run in CI before each scan |
-| A rebuild command exists (ADR-0001 obligation) | contract exists; implementation lands with module 8 |
+| Every enforcement script is observed to reject, not merely to pass | satisfied — `--self-test` on all five law scripts and on the stack preflight, run in CI before each scan |
+| A rebuild command exists (ADR-0001 obligation) | **satisfied 2026-08-29.** `scripts/rebuild_graph.py` implements all six steps of §3.3 over `causalog.persistence.neo4j.projection`. `make verify-projection RUN_ID=…` additionally reports drift at any time, which is the case that matters — drift arrives after the build. Not yet exercised against a live Neo4j (`PROGRESS.md` §00d, known gaps). |
 | The determinism gate runs the pipeline twice | script exists; **NOT-YET-RUNNABLE** until the pipeline exists — tracked in `PROGRESS.md` |
-| `tests/ontology/test_ontology_swap.py` proves domain independence empirically | tracked; lands with module 2 |
+| `tests/ontology/test_ontology_swap.py` proves domain independence empirically | **still open.** `tests/ontology/test_pack_is_not_domain_shaped.py` (ADR-0026) discharges half of it: two unrelated domains load through one code path, share no behavioural vocabulary, and share only the structural base. That the swap changes engine *output* still needs a pipeline. |
+| The domain pack schema is published and cannot drift from its validator | satisfied — generated from `causalog.ontology_runtime.dsl`, checked by `scripts/export_ontology_schema.py --check` in `make laws` and CI (ADR-0026) |
+| A new domain can be onboarded by someone who did not write the ontology layer | satisfied — `docs/ontology.md` §4, a numbered checklist |
 | Every interface named here appears in the `CONTEXT.md` §6 registry | satisfied |

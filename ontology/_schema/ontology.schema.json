@@ -1,0 +1,1158 @@
+{
+  "$defs": {
+    "ActionabilitySpec": {
+      "additionalProperties": false,
+      "description": "Whether an operator can act on an event type, and at what cost.\n\nRoot-cause ranking reads this (ADR-0008), which is why it is declared rather than\ninferred. `provenance_class` is pinned to `ASSUMED`: risk R-15 records that nothing in\nthe system can validate an actionability claim, and labelling it anything stronger\nwould hide that.",
+      "properties": {
+        "actionable": {
+          "title": "Actionable",
+          "type": "boolean"
+        },
+        "cost_class": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Class"
+        },
+        "provenance_class": {
+          "$ref": "#/$defs/ProvenanceClass",
+          "default": "ASSUMED"
+        },
+        "severity_class": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Severity Class",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actionable",
+        "severity_class"
+      ],
+      "title": "ActionabilitySpec",
+      "type": "object"
+    },
+    "AttributeOrigin": {
+      "description": "Where an attribute's value comes from.\n\nThis is the field that makes the traceability constraint mechanical rather than\neditorial: every attribute states whether a source column carries it, whether it is\ncomputed, or whether it is an assumption with no source behind it at all.",
+      "enum": [
+        "SOURCE_COLUMN",
+        "DERIVED",
+        "ASSUMED"
+      ],
+      "title": "AttributeOrigin",
+      "type": "string"
+    },
+    "AttributeSemantics": {
+      "description": "What an attribute *means* to the engine, independent of its storage type.\n\nThe engine reads semantics, never names. `QUANTITY` and `MONETARY` are both `DECIMAL`\nand are treated differently by measurement roll-up; that distinction has to be\ndeclared, because no type system carries it.",
+      "enum": [
+        "IDENTIFIER",
+        "CATEGORICAL",
+        "QUANTITY",
+        "MONETARY",
+        "RATIO",
+        "INSTANT",
+        "DURATION",
+        "FLAG",
+        "FREE_TEXT",
+        "GEOSPATIAL"
+      ],
+      "title": "AttributeSemantics",
+      "type": "string"
+    },
+    "AttributeSpec": {
+      "additionalProperties": false,
+      "description": "One attribute of an entity type or event type, with its provenance of definition.\n\nExactly one of `source_column`, `derivation_basis`, `assumption` is present, selected\nby `origin`. The three are kept as separate fields rather than one free-text note so\nthat \"which columns does this pack actually consume\" is a query rather than a reading\nexercise.",
+      "properties": {
+        "assumption": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Assumption"
+        },
+        "derivation_basis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Derivation Basis"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "enumeration_values": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Enumeration Values",
+          "type": "array"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/$defs/AttributeOrigin"
+        },
+        "semantics": {
+          "$ref": "#/$defs/AttributeSemantics"
+        },
+        "source_column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Column"
+        },
+        "type": {
+          "$ref": "#/$defs/AttributeType"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "semantics",
+        "description",
+        "origin"
+      ],
+      "title": "AttributeSpec",
+      "type": "object"
+    },
+    "AttributeType": {
+      "description": "The closed set of attribute value types a pack may declare.",
+      "enum": [
+        "STRING",
+        "INTEGER",
+        "DECIMAL",
+        "BOOLEAN",
+        "INSTANT",
+        "DURATION",
+        "ENUMERATION"
+      ],
+      "title": "AttributeType",
+      "type": "string"
+    },
+    "Cardinality": {
+      "description": "The multiplicity of a structural relationship.",
+      "enum": [
+        "ONE_TO_ONE",
+        "ONE_TO_MANY",
+        "MANY_TO_ONE",
+        "MANY_TO_MANY"
+      ],
+      "title": "Cardinality",
+      "type": "string"
+    },
+    "ClassSpec": {
+      "additionalProperties": false,
+      "description": "One member of a pack-declared ordinal vocabulary (cost or severity).\n\n`rank` carries the sequence so a ranker can compare two members without reading their\nnames. Names are for humans; `rank` is for the engine.",
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "rank": {
+          "minimum": 0,
+          "title": "Rank",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "rank"
+      ],
+      "title": "ClassSpec",
+      "type": "object"
+    },
+    "DefaultConfidenceComponentSpec": {
+      "additionalProperties": false,
+      "description": "One named component of a declared default confidence.\n\nDeliberately *not* a `core.types.ConfidenceComponent`: that type requires\n`evidence_record_ids`, and a pack has no evidence records -- they are minted when a\nrecord is read. A pack declares the names and weights; the event generator materializes\nthe vector against real evidence.",
+      "properties": {
+        "component_name": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Component Name",
+          "type": "string"
+        },
+        "value": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "component_name",
+        "value"
+      ],
+      "title": "DefaultConfidenceComponentSpec",
+      "type": "object"
+    },
+    "DefaultConfidenceSpec": {
+      "additionalProperties": false,
+      "description": "The confidence a derived event type carries in the absence of anything better.",
+      "properties": {
+        "aggregation": {
+          "minLength": 1,
+          "title": "Aggregation",
+          "type": "string"
+        },
+        "components": {
+          "items": {
+            "$ref": "#/$defs/DefaultConfidenceComponentSpec"
+          },
+          "minItems": 1,
+          "title": "Components",
+          "type": "array"
+        },
+        "provenance_class": {
+          "$ref": "#/$defs/ProvenanceClass"
+        }
+      },
+      "required": [
+        "components",
+        "aggregation",
+        "provenance_class"
+      ],
+      "title": "DefaultConfidenceSpec",
+      "type": "object"
+    },
+    "DerivationSpec": {
+      "additionalProperties": false,
+      "description": "How a derived event type is reconstructed, and how sure the pack is about it.",
+      "properties": {
+        "basis": {
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        },
+        "default_confidence": {
+          "$ref": "#/$defs/DefaultConfidenceSpec"
+        },
+        "source_columns": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Columns",
+          "type": "array"
+        }
+      },
+      "required": [
+        "basis",
+        "default_confidence"
+      ],
+      "title": "DerivationSpec",
+      "type": "object"
+    },
+    "EntityTypeSpec": {
+      "additionalProperties": false,
+      "description": "A kind of thing the domain contains.",
+      "properties": {
+        "attributes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AttributeSpec"
+          },
+          "title": "Attributes",
+          "type": "array"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "identifying_keys": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Identifying Keys",
+          "type": "array"
+        },
+        "lifecycle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LifecycleSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ],
+      "title": "EntityTypeSpec",
+      "type": "object"
+    },
+    "EventCategorySpec": {
+      "additionalProperties": false,
+      "description": "A pack-declared event category.\n\nCategories are data. The engine groups by whatever a pack declares and knows none of\nthe names; a category set hardcoded anywhere in the engine would be one domain's\nvocabulary wearing a generic label.",
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ],
+      "title": "EventCategorySpec",
+      "type": "object"
+    },
+    "EventTypeSpec": {
+      "additionalProperties": false,
+      "description": "A kind of occurrence the domain produces.",
+      "properties": {
+        "actionability": {
+          "$ref": "#/$defs/ActionabilitySpec"
+        },
+        "category": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Category",
+          "type": "string"
+        },
+        "derivation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DerivationSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "observation": {
+          "$ref": "#/$defs/ObservationMode"
+        },
+        "participants": {
+          "items": {
+            "$ref": "#/$defs/ParticipantSpec"
+          },
+          "minItems": 1,
+          "title": "Participants",
+          "type": "array"
+        },
+        "postconditions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PostconditionSpec"
+          },
+          "title": "Postconditions",
+          "type": "array"
+        },
+        "preconditions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PreconditionSpec"
+          },
+          "title": "Preconditions",
+          "type": "array"
+        },
+        "provenance_class": {
+          "$ref": "#/$defs/ProvenanceClass"
+        },
+        "required_attributes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/AttributeSpec"
+          },
+          "title": "Required Attributes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "category",
+        "observation",
+        "provenance_class",
+        "participants",
+        "actionability"
+      ],
+      "title": "EventTypeSpec",
+      "type": "object"
+    },
+    "ExpressionOperator": {
+      "description": "The closed operator set a measurement may be built from.\n\nClosed by design. The alternative -- an expression string evaluated at runtime -- is\nexecutable code inside a data file, which ADR-0026 refuses. A metric that needs an\noperator absent here needs the operator added, with an ADR, and every pack revalidated.",
+      "enum": [
+        "CONSTANT",
+        "ATTRIBUTE",
+        "SUM",
+        "DIFFERENCE",
+        "PRODUCT",
+        "RATIO",
+        "DURATION_BETWEEN",
+        "MINIMUM",
+        "MAXIMUM"
+      ],
+      "title": "ExpressionOperator",
+      "type": "string"
+    },
+    "ExternalEventTypeSpec": {
+      "additionalProperties": false,
+      "description": "An event type sourced outside the primary dataset, declared but not populated.\n\nPresent so the schema does not have to change when an external feed arrives, and\nrefused everywhere else by `structural.py` so declaring one does not accidentally ship\na V1 feature (`CONTEXT.md` §10).",
+      "properties": {
+        "category": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Category",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "note": {
+          "minLength": 1,
+          "title": "Note",
+          "type": "string"
+        },
+        "prospective_participants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ParticipantSpec"
+          },
+          "title": "Prospective Participants",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/ExternalStatus"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "category",
+        "status",
+        "note"
+      ],
+      "title": "ExternalEventTypeSpec",
+      "type": "object"
+    },
+    "ExternalStatus": {
+      "description": "The lifecycle of an externally-sourced event type.\n\nOnly one member exists on purpose. V1 declares external event types so the schema is\nfuture-proof and populates none of them; a second member is a feature, and features\narrive through the PRD, not through an enum.",
+      "enum": [
+        "DECLARED_UNPOPULATED"
+      ],
+      "title": "ExternalStatus",
+      "type": "string"
+    },
+    "LifecycleSpec": {
+      "additionalProperties": false,
+      "description": "The state machine an entity type moves through.",
+      "properties": {
+        "initial_states": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Initial States",
+          "type": "array"
+        },
+        "states": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "States",
+          "type": "array"
+        },
+        "terminal_states": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Terminal States",
+          "type": "array"
+        },
+        "transitions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TransitionSpec"
+          },
+          "title": "Transitions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "states",
+        "initial_states"
+      ],
+      "title": "LifecycleSpec",
+      "type": "object"
+    },
+    "MeasurementDefinitionSpec": {
+      "additionalProperties": false,
+      "description": "How one domain metric is computed from event attributes.\n\nEvery metric the engine reports is defined here. A formula written into a reasoning\nmodule instead would be domain logic in the engine, which is the thing LAW-DOMAIN\nexists to prevent.",
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "expression": {
+          "$ref": "#/$defs/MeasurementExpression"
+        },
+        "id": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MeasurementKind"
+        },
+        "provenance_class": {
+          "$ref": "#/$defs/ProvenanceClass"
+        },
+        "unit": {
+          "minLength": 1,
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "kind",
+        "unit",
+        "provenance_class",
+        "expression"
+      ],
+      "title": "MeasurementDefinitionSpec",
+      "type": "object"
+    },
+    "MeasurementExpression": {
+      "additionalProperties": false,
+      "description": "One node of a measurement's operator tree.\n\nRecursive, closed, and inert. Nothing here is evaluated by this module -- the tree is\ndata that a downstream module walks. That is the whole point: a formula expressed as a\ntree can be inspected, diffed, and hashed; a formula expressed as a string has to be\nexecuted before anyone knows what it says.",
+      "properties": {
+        "attribute": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attribute"
+        },
+        "event_type": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Type"
+        },
+        "op": {
+          "$ref": "#/$defs/ExpressionOperator"
+        },
+        "operands": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MeasurementExpression"
+          },
+          "title": "Operands",
+          "type": "array"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "op"
+      ],
+      "title": "MeasurementExpression",
+      "type": "object"
+    },
+    "MeasurementKind": {
+      "description": "What a measurement measures. Read by ranking; never branched on by name.",
+      "enum": [
+        "DELAY",
+        "DURATION",
+        "COST",
+        "IMPACT",
+        "COUNT",
+        "RATIO",
+        "QUANTITY"
+      ],
+      "title": "MeasurementKind",
+      "type": "string"
+    },
+    "ObservationMode": {
+      "description": "Whether the source logs an event type directly, or the engine reconstructs it.\n\n`DERIVED` is the load-bearing member (ADR-0029). A source that records a field but\nnever records the occurrence it implies produces a `DERIVED` event type, which must\ndeclare its basis and may never claim `OBSERVED` provenance.",
+      "enum": [
+        "OBSERVED",
+        "DERIVED"
+      ],
+      "title": "ObservationMode",
+      "type": "string"
+    },
+    "ParticipantSpec": {
+      "additionalProperties": false,
+      "description": "An entity type an event type involves, under a named role.\n\nThe role, not the entity type, is what preconditions and postconditions refer to. That\nindirection is what lets one event type involve two entities of the same type without\nthe conditions becoming ambiguous.",
+      "properties": {
+        "entity_type": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "role": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "entity_type"
+      ],
+      "title": "ParticipantSpec",
+      "type": "object"
+    },
+    "PostconditionSpec": {
+      "additionalProperties": false,
+      "description": "The state a participant holds in after the event occurs.",
+      "properties": {
+        "role": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Role",
+          "type": "string"
+        },
+        "state": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "state"
+      ],
+      "title": "PostconditionSpec",
+      "type": "object"
+    },
+    "PreconditionSpec": {
+      "additionalProperties": false,
+      "description": "A state a participant is expected to hold in before the event occurs.",
+      "properties": {
+        "role": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Role",
+          "type": "string"
+        },
+        "state_in": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "State In",
+          "type": "array"
+        }
+      },
+      "required": [
+        "role",
+        "state_in"
+      ],
+      "title": "PreconditionSpec",
+      "type": "object"
+    },
+    "ProcessDefinitionSpec": {
+      "additionalProperties": false,
+      "description": "A named canonical flow: the expected happy-path sequence of event types.\n\nThe timeline builder groups against this and the rule engine reasons against it. It is\nan *expectation*, never a constraint: a run that departs from it produces a finding,\nnot a rejected record.",
+      "properties": {
+        "anchor_entity_type": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Anchor Entity Type",
+          "type": "string"
+        },
+        "canonical_sequence": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Canonical Sequence",
+          "type": "array"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "optional_steps": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Optional Steps",
+          "type": "array"
+        },
+        "repeatable_steps": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Repeatable Steps",
+          "type": "array"
+        },
+        "variants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProcessVariantSpec"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "anchor_entity_type",
+        "canonical_sequence"
+      ],
+      "title": "ProcessDefinitionSpec",
+      "type": "object"
+    },
+    "ProcessVariantSpec": {
+      "additionalProperties": false,
+      "description": "An admissible departure from a canonical sequence.",
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "sequence": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sequence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "sequence"
+      ],
+      "title": "ProcessVariantSpec",
+      "type": "object"
+    },
+    "ProvenanceClass": {
+      "description": "How a thing came to be known. Orthogonal to how confident we are in it.",
+      "enum": [
+        "OBSERVED",
+        "ASSUMED",
+        "STATISTICAL",
+        "INFERRED",
+        "SIMULATED"
+      ],
+      "title": "ProvenanceClass",
+      "type": "string"
+    },
+    "RelationshipTypeSpec": {
+      "additionalProperties": false,
+      "description": "A structural, non-causal edge between two entity types.\n\n`CAUSES` is refused here by `structural.py`. `docs/contracts.md` §5 forbids it on\n`Relationship`, and a pack is the one place someone could reintroduce it as data.",
+      "properties": {
+        "cardinality": {
+          "$ref": "#/$defs/Cardinality"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "from": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "From",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "temporal_validity": {
+          "$ref": "#/$defs/TemporalValidity"
+        },
+        "to": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "from",
+        "to",
+        "cardinality",
+        "temporal_validity"
+      ],
+      "title": "RelationshipTypeSpec",
+      "type": "object"
+    },
+    "RemovalSpec": {
+      "additionalProperties": false,
+      "description": "Identifiers an overlay withdraws from the pack it extends.\n\nRemoval is explicit and per-identifier. An overlay cannot drop an inherited declaration\nby omitting it, because omission is indistinguishable from not having thought about it.",
+      "properties": {
+        "cost_classes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Cost Classes",
+          "type": "array"
+        },
+        "entity_types": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Entity Types",
+          "type": "array"
+        },
+        "event_categories": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Event Categories",
+          "type": "array"
+        },
+        "event_types": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Event Types",
+          "type": "array"
+        },
+        "external_event_types": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "External Event Types",
+          "type": "array"
+        },
+        "measurement_definitions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Measurement Definitions",
+          "type": "array"
+        },
+        "process_definitions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Process Definitions",
+          "type": "array"
+        },
+        "relationship_types": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Relationship Types",
+          "type": "array"
+        },
+        "severity_classes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Severity Classes",
+          "type": "array"
+        }
+      },
+      "title": "RemovalSpec",
+      "type": "object"
+    },
+    "TemporalValidity": {
+      "description": "Whether a relationship holds for all time or only over an interval.\n\n`TIME_VARYING` tells the graph builder the edge needs a validity interval; `STATIC`\ntells it the edge does not. Guessing either way produces a graph that answers\n\"what was true then\" incorrectly.",
+      "enum": [
+        "STATIC",
+        "TIME_VARYING"
+      ],
+      "title": "TemporalValidity",
+      "type": "string"
+    },
+    "TransitionSpec": {
+      "additionalProperties": false,
+      "description": "One legal state transition, and optionally the event type that effects it.",
+      "properties": {
+        "from": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "To",
+          "type": "string"
+        },
+        "triggered_by": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Triggered By"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "TransitionSpec",
+      "type": "object"
+    }
+  },
+  "$id": "https://causalog.invalid/schema/domain-pack/1.0.0/ontology.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The declarative description of one domain (ADR-0026). Generated from causalog.ontology_runtime.dsl; edit the models, never this file.",
+  "properties": {
+    "cost_classes": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ClassSpec"
+      },
+      "title": "Cost Classes",
+      "type": "array"
+    },
+    "description": {
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "entity_types": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/EntityTypeSpec"
+      },
+      "title": "Entity Types",
+      "type": "array"
+    },
+    "event_categories": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/EventCategorySpec"
+      },
+      "title": "Event Categories",
+      "type": "array"
+    },
+    "event_types": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/EventTypeSpec"
+      },
+      "title": "Event Types",
+      "type": "array"
+    },
+    "extends": {
+      "anyOf": [
+        {
+          "pattern": "^_?[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Extends"
+    },
+    "external_event_types": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ExternalEventTypeSpec"
+      },
+      "title": "External Event Types",
+      "type": "array"
+    },
+    "measurement_definitions": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/MeasurementDefinitionSpec"
+      },
+      "title": "Measurement Definitions",
+      "type": "array"
+    },
+    "ontology_version": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "title": "Ontology Version",
+      "type": "string"
+    },
+    "pack_id": {
+      "pattern": "^_?[a-z][a-z0-9_]*$",
+      "title": "Pack Id",
+      "type": "string"
+    },
+    "pack_schema_version": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "title": "Pack Schema Version",
+      "type": "string"
+    },
+    "process_definitions": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ProcessDefinitionSpec"
+      },
+      "title": "Process Definitions",
+      "type": "array"
+    },
+    "relationship_types": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/RelationshipTypeSpec"
+      },
+      "title": "Relationship Types",
+      "type": "array"
+    },
+    "removes": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RemovalSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "severity_classes": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ClassSpec"
+      },
+      "title": "Severity Classes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "pack_schema_version",
+    "pack_id",
+    "ontology_version",
+    "description"
+  ],
+  "title": "CausaLog domain pack",
+  "type": "object"
+}

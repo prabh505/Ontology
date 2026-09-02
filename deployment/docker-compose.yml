@@ -6,11 +6,23 @@
 # PostgreSQL or a Redis on the conventional port, and "port is already allocated" should be
 # fixed by setting a variable, not by editing this file or by stopping someone else's
 # container. See `deployment/.env.example`.
+#
+# Memory budget. Every service declares `mem_limit` so that an out-of-memory kill is
+# attributable to a named container instead of leaving the kernel to pick a victim among
+# every container on the host -- which is how the original exit 137 read as a configuration
+# error rather than as "Neo4j wanted more than it had".
+#
+#   neo4j 1g + postgres 512m + redis 256m + backend 512m + frontend 1g = 3.25g
+#
+# That fits inside the 4 GB host floor `deployment/README.md` documents and
+# `scripts/check_stack_preflight.py` enforces, leaving headroom for the runtime itself.
+# Raising any limit here without raising that floor makes the floor a lie.
 name: causalog
 
 services:
   postgres:
     image: postgres:16.6-alpine
+    mem_limit: 512m
     environment:
       POSTGRES_USER: causalog
       POSTGRES_PASSWORD: causalog
@@ -20,11 +32,14 @@ services:
     ports: ["${POSTGRES_PORT:-5432}:5432"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Migrations ARE the init directory: PostgreSQL runs *.sql there in lexical
-      # sequence on first initialization, which is exactly the NNNN_ naming
-      # (CONVENTIONS.md §5). It does not recurse into subdirectories, so migrations
-      # cannot be nested one level down.
-      - ./sql/migrations:/docker-entrypoint-initdb.d:ro
+      # Mounted for inspection, NOT as the init directory. PostgreSQL's init directory
+      # applies *.sql in lexical sequence without writing the migration ledger, which
+      # leaves a database whose schema exists and whose `schema_migration` table says
+      # nothing has been applied. The two then disagree, and the disagreement stays
+      # invisible until a later migration fails on an object it did not create.
+      # Migrations are applied by `make migrate`, which records every application.
+      - ./sql/migrations:/migrations:ro
+      - ./sql/down:/migrations-down:ro
       # Seeds are mounted but NOT auto-applied. Fixture rows are applied deliberately
       # (`make seed`), never as a side effect of starting a container.
       - ./sql/seeds:/seeds:ro
@@ -54,7 +69,17 @@ services:
     volumes:
       - neo4j_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p causalog-local 'RETURN 1' || exit 1"]
+      # NOT `cypher-shell`. cypher-shell is a JVM application, so running it inside this
+      # container starts a SECOND JVM beside the server's, inside `mem_limit: 1g` -- and
+      # the container is OOM-killed (`exit 137`), which is the failure the memory comments
+      # above and `check_stack_preflight.py` exist to explain. A healthcheck that can kill
+      # the service it is checking is worse than no healthcheck, and this one ran every 10s.
+      # Observed 2026-08-29 while querying a healthy container.
+      #
+      # The HTTP endpoint answers the same question -- is the server accepting requests --
+      # from a process that costs a few megabytes. Bolt readiness is then covered by the
+      # first real query the application makes.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7474/ || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 15
@@ -62,6 +87,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
+    mem_limit: 256m
     # Cache only. Nothing here is a source of truth (ADR-0001), so no persistence.
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports: ["${REDIS_PORT:-6379}:6379"]
@@ -72,6 +98,7 @@ services:
       retries: 12
 
   backend:
+    mem_limit: 512m
     build:
       context: ..
       dockerfile: deployment/docker/backend.Dockerfile
@@ -98,6 +125,7 @@ services:
       start_period: 20s
 
   frontend:
+    mem_limit: 1g
     build:
       context: ..
       dockerfile: deployment/docker/frontend.Dockerfile
@@ -116,7 +144,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 12
-      # `next dev` compiles on first boot; 90s is measured, not guessed.
+      # `next dev` compiles on first boot; 120s is measured, not guessed.
       start_period: 120s
 
 volumes:

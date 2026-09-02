@@ -6,6 +6,15 @@
 
 Derive `State` and `Transition` from events (module 6).
 
+## What it produces
+
+`State` and `Transition` values plus a `StateQualityReport` -- illegal-transition
+findings (with the offending event named, never silently skipped), assumed-initial-state
+and uncertain-boundary counts, and duration statistics for every pack-declared
+`DURATION`/`DELAY` measurement. An illegal transition stops that entity's replay at the
+offending event and is reported; it never aborts the whole run and never corrects itself
+into a legal shape.
+
 ## Forbidden dependencies
 
 `causal_engine` and above; may never invent a state absent from the ontology.

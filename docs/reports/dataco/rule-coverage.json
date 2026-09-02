@@ -1,0 +1,217 @@
+{
+  "blind_spots": [
+    "FRAUD_SUSPECTED",
+    "INVENTORY_SHORTFALL_DETECTED",
+    "ORDER_PLACED",
+    "PAYMENT_FAILED",
+    "PAYMENT_REQUESTED",
+    "PAYMENT_REVIEW_OPENED"
+  ],
+  "coverage_ratio": 0.65,
+  "entries": [
+    {
+      "event_type": "FRAUD_SUSPECTED",
+      "explained_by": [],
+      "reasoned_from_by": [
+        "R-DCO-FRAUD-TERMINATES"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "INVENTORY_RELEASED",
+      "explained_by": [
+        "R-DCO-SHORTFALL-RELEASES-LINE"
+      ],
+      "reasoned_from_by": [
+        "R-DCO-RELEASE-CANCELS-ORDER"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "INVENTORY_RESERVED",
+      "explained_by": [
+        "R-DCO-SETTLEMENT-COMMITS-STOCK"
+      ],
+      "reasoned_from_by": [
+        "R-DCO-COMMITMENT-ENABLES-PICK"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "INVENTORY_SHORTFALL_DETECTED",
+      "explained_by": [],
+      "reasoned_from_by": [
+        "M-DCO-SHORTFALL-AMPLIFIES-DELAY",
+        "R-DCO-SHORTFALL-AND-REVIEW-TERMINATE",
+        "R-DCO-SHORTFALL-RELEASES-LINE"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "ITEM_PACKED",
+      "explained_by": [
+        "R-DCO-PICK-ENABLES-PACK"
+      ],
+      "reasoned_from_by": [
+        "R-DCO-PACK-ENABLES-DISPATCH"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "ITEM_PICKED",
+      "explained_by": [
+        "R-DCO-COMMITMENT-ENABLES-PICK"
+      ],
+      "reasoned_from_by": [
+        "R-DCO-PICK-ENABLES-PACK"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "ORDER_CANCELED",
+      "explained_by": [
+        "R-DCO-FRAUD-TERMINATES",
+        "R-DCO-HOLD-TERMINATES",
+        "R-DCO-RELEASE-CANCELS-ORDER",
+        "R-DCO-SHORTFALL-AND-REVIEW-TERMINATE"
+      ],
+      "reasoned_from_by": [],
+      "witnessable": true
+    },
+    {
+      "event_type": "ORDER_CLOSED",
+      "explained_by": [
+        "R-DCO-COMPLETION-CLOSES-ORDER"
+      ],
+      "reasoned_from_by": [],
+      "witnessable": true
+    },
+    {
+      "event_type": "ORDER_COMPLETED",
+      "explained_by": [
+        "R-DCO-ARRIVAL-COMPLETES-ORDER"
+      ],
+      "reasoned_from_by": [
+        "R-DCO-COMPLETION-CLOSES-ORDER"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "ORDER_HELD",
+      "explained_by": [
+        "R-DCO-SETTLEMENT-FAILURE-HOLDS"
+      ],
+      "reasoned_from_by": [
+        "R-DCO-HOLD-TERMINATES"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "ORDER_PLACED",
+      "explained_by": [],
+      "reasoned_from_by": [],
+      "witnessable": true
+    },
+    {
+      "event_type": "ORDER_RELEASED",
+      "explained_by": [],
+      "reasoned_from_by": [],
+      "witnessable": false
+    },
+    {
+      "event_type": "PAYMENT_APPROVED",
+      "explained_by": [
+        "R-DCO-REVIEW-CLEARS-SETTLEMENT"
+      ],
+      "reasoned_from_by": [
+        "R-DCO-SETTLEMENT-COMMITS-STOCK"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "PAYMENT_FAILED",
+      "explained_by": [],
+      "reasoned_from_by": [
+        "R-DCO-SETTLEMENT-FAILURE-HOLDS"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "PAYMENT_REQUESTED",
+      "explained_by": [],
+      "reasoned_from_by": [],
+      "witnessable": true
+    },
+    {
+      "event_type": "PAYMENT_REVIEW_OPENED",
+      "explained_by": [],
+      "reasoned_from_by": [
+        "R-DCO-REVIEW-CLEARS-SETTLEMENT",
+        "R-DCO-SHORTFALL-AND-REVIEW-TERMINATE"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "SHIPMENT_DELAYED",
+      "explained_by": [
+        "R-DCO-DISPATCH-MISS-DELAYS",
+        "R-DCO-SLOW-SERVICE-DELAYS",
+        "R-DCO-TRANSIT-DELAYS"
+      ],
+      "reasoned_from_by": [
+        "R-DCO-DELAY-LATE-ARRIVAL"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "SHIPMENT_DELIVERED",
+      "explained_by": [
+        "R-DCO-DELAY-LATE-ARRIVAL"
+      ],
+      "reasoned_from_by": [
+        "R-DCO-ARRIVAL-COMPLETES-ORDER"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "SHIPMENT_DISPATCHED",
+      "explained_by": [
+        "R-DCO-PACK-ENABLES-DISPATCH"
+      ],
+      "reasoned_from_by": [
+        "M-DCO-FAST-SERVICE-INHIBITS-DELAY",
+        "R-DCO-DISPATCH-BEGINS-TRANSIT",
+        "R-DCO-DISPATCH-MISS-DELAYS",
+        "R-DCO-SLOW-SERVICE-DELAYS"
+      ],
+      "witnessable": true
+    },
+    {
+      "event_type": "SHIPMENT_IN_TRANSIT",
+      "explained_by": [
+        "R-DCO-DISPATCH-BEGINS-TRANSIT"
+      ],
+      "reasoned_from_by": [
+        "R-DCO-TRANSIT-DELAYS"
+      ],
+      "witnessable": true
+    }
+  ],
+  "event_types_declared": 20,
+  "event_types_explained": 13,
+  "ontology_pack": "dataco",
+  "rule_pack_hash": "rul:f4aeace1280015c4",
+  "rule_pack_id": "dataco",
+  "rule_pack_version": "1.0.0",
+  "rules_by_knowledge_provenance": {
+    "ASSUMPTION": 5,
+    "DATASET_OBSERVATION": 4,
+    "DOMAIN_EXPERTISE": 15
+  },
+  "rules_enabled": 23,
+  "rules_total": 24,
+  "unwitnessable": [
+    "ORDER_RELEASED"
+  ],
+  "witnessability_checked": true
+}

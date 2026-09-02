@@ -29,6 +29,7 @@ dev = [
   "mypy==1.14.1",
   "pytest==8.3.4",
   "pytest-cov==6.0.0",
+  "hypothesis==6.165.10", # property-based tests for the canonical core (ADR-0024)
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -66,10 +67,22 @@ select = [
 ignore = [
   "D203", "D213",  # incompatible docstring conventions; D211/D212 are selected instead
   "D401",          # imperative-mood check is too noisy on contract docstrings
+  # TRY003 forbids long messages at the raise site. CONVENTIONS.md §7 requires the
+  # opposite: every error "must name the offending identifier, the module, and the
+  # contract violated". Satisfying both would mean one exception subclass per message,
+  # which fragments the closed taxonomy the same section mandates. §7 governs; the rule
+  # is off, and the taxonomy in core/errors.py stays closed.
+  "TRY003",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "D103", "ANN201"]           # asserts and terse test names are expected
+# ANN401: a fixture parameterized over two implementations -- the in-memory fake and the
+#   PostgreSQL adapter -- has no single honest type, and naming either would assert
+#   something the test deliberately does not depend on. `Any` is the accurate annotation
+#   there. Scoped to tests: the distribution itself is still ANN401-clean.
+# T201: `tests/integration/test_bulk_load_budget.py` prints its measurement against the
+#   prd.md §55 budget. A benchmark whose number is not visible is a benchmark nobody reads.
+"tests/**" = ["S101", "D103", "ANN201", "ANN401", "T201"]
 "tests/**/__init__.py" = ["D104"]                 # the test mirror is structure, not prose
 "scripts/**" = ["T201"]                  # enforcement scripts report to stdout
 
@@ -104,10 +117,11 @@ ignore_missing_imports = true
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 addopts = "-q --strict-markers --strict-config --cov=causalog --cov-report=term-missing --cov-report=xml"
 markers = [
   "law: asserts one of the Five Inviolable Laws; a failure is CRITICAL",
+  "property: hypothesis-driven; asserts a law over generated inputs, not one example",
   "determinism: asserts byte-identical reruns",
   "slow: excluded from `make test-fast`",
 ]

@@ -12,10 +12,24 @@ replaceable. The reasoning engine is not.**
 
 ## Current state
 
-Phase **P0 (Governance)**. The architecture blueprint, the repository scaffold, and the
-law-enforcement tooling exist. **None of the 16 modules is built and there is no business
-logic.** See `CONTEXT.md` for the authoritative answer to "where is this project right
-now", and `PROGRESS.md` for what was built and what was deliberately not.
+Phase **P0 (Governance)** closing. The architecture blueprint, the repository scaffold, the
+law-enforcement tooling, the frozen canonical core, the ontology layer and the persistence
+layer exist. **Two of the 16 modules are built** — 1 Data Adapter and 2 Schema Mapper, both
+`built-unverified` — so the reference dataset can be pinned, profiled, validated, cleaned and
+mapped, but **there is still no `Event`, no graph, and no inference.**
+
+```bash
+make import DATASET=dataco     # pins the file, measures it, publishes the report
+```
+
+The published Data Quality Report for the reference dataset is at
+`docs/reports/dataco/<dataset_version>/`. **Read its headline constraints first** — they bound
+what any causal claim about this dataset can ever mean, and one of them corrects an assumption
+this project held for a week (DEF-0004).
+
+See `CONTEXT.md` for the authoritative answer to "where is this project right now", and
+`PROGRESS.md` §01a for what was built, what it measured, and what it deliberately does not
+check.
 
 ## If you are a new session, read in this order
 
@@ -38,21 +52,33 @@ make setup
 ```
 
 ```bash
-make lint typecheck test
+make verify
 ```
 
 ```bash
 make up
 ```
 
-**Allocate the container runtime at least 4 GB of memory.** Neo4j is the constraint: below
-that — or with unrelated containers already holding most of the budget — it is OOM-killed
-during startup and exits 137, which reads like a configuration error and is not one. Its
-`mem_limit` is declared in `deployment/docker-compose.yml` so the kill is attributable to
-neo4j rather than to whichever container the kernel picks.
+```bash
+make migrate
+```
 
-See `deployment/.env.example` if a conventional host port is already taken on your machine;
-every published port is overridable without editing the compose file.
+`make verify` is `lint typecheck test` in one command. **`make up` deliberately does not
+migrate** — PostgreSQL's init directory applies `*.sql` without writing the migration
+ledger, which leaves a schema that exists and a history saying nothing was applied, and the
+disagreement stays invisible until a later migration fails on an object it did not create
+(ADR-0033). Run `make migrate` after `make up`; `make migrate-status` shows what is applied
+and what is pending. `make up` runs `make doctor` first,
+which checks the container runtime and every published host port and names the remedy for
+whatever is missing — so the two failures that actually happen arrive diagnosed:
+
+- **Memory.** Allocate the container runtime **at least 4 GB**. Neo4j is the constraint:
+  below that — or with unrelated containers holding most of the budget — it is OOM-killed
+  during startup and exits 137, which reads like a configuration error and is not one.
+  Every service declares a `mem_limit`, so a kill names its container.
+- **Ports.** Every published port is overridable in `deployment/.env` without editing the
+  compose file; `make doctor` prints the exact line to add. Ports this project already
+  publishes are not conflicts, so `make up` is idempotent.
 
 ## Layout
 
@@ -60,12 +86,12 @@ every published port is overridable without editing the compose file.
 |---|---|
 | `backend/` | the one installable Python distribution, `causalog` (ADR-0012) |
 | `frontend/` | Next.js + TypeScript; the six workspaces (prd.md §51), not yet built |
-| `ontology/` | domain vocabulary as **data** — replacing this is how a domain is added |
-| `rule_engine/` | rule packs as **data** (the evaluator code lives in the backend) |
+| `ontology/` | domain vocabulary as **data** — `packs/<domain>/ontology.yaml`; replacing this is how a domain is added (`docs/ontology.md`) |
+| `rule_engine/` | rule packs as **data** — `dataco/` and `hospital/` (the evaluator code lives in the backend, and contains none of their vocabulary) |
 | `datasets/` | dataset pins by hash; no data is committed |
-| `docs/` | `prd.md` (intent), `architecture.md` (structure) |
+| `docs/` | `prd.md` (intent), `architecture.md` (structure), `contracts.md` (the frozen core types), `ontology.md` (the domain pack schema and how to onboard a domain), `data-model.md` (the schema, the graph model, and the storage boundary) |
 | `scripts/` | the checks that make the Five Laws build outcomes rather than prose |
-| `deployment/` | Docker Compose, Dockerfiles, numbered SQL migrations |
+| `deployment/` | Docker Compose, Dockerfiles, and the numbered SQL migration series — `sql/migrations/` forward, `sql/down/` reverse, applied by `make migrate` |
 
 ## The Five Inviolable Laws
 
@@ -74,4 +100,16 @@ byte-identical, checked by `scripts/check_law_copies.py`.
 
 **LAW-EVENT** · **LAW-TIME** · **LAW-PROVENANCE** · **LAW-DOMAIN** · **LAW-EVIDENCE**
 
-Four checks enforce them mechanically; run them with `make laws`.
+Ten checks enforce them mechanically; run them with `make laws`. Each ships a
+`--self-test` and is observed to reject a planted violation before it is trusted to pass —
+a check that has only ever passed is not evidence a law is enforced (DEF-0001, ADR-0019).
+
+The same rule reaches inside the ontology loader, which reports a third diagnostic severity
+beside error and warning: `NOT_RUNNABLE`, for a check it could not perform. It was carrying
+one — rule coverage, because no rule pack existed — until the rule engine landed on
+2026-09-01; that check is now real, and what it reports is that **6 of 20 declared DataCo
+event types have no rule explaining them** (`docs/reports/dataco/rule-coverage.md`). A
+validator that silently skipped it would have been indistinguishable from one that ran it
+and found nothing. The scripts say the same thing
+with an exit code: `check_metrics_are_declared.py` and `check_determinism.py` exit **2**
+while the code they would scan does not exist, rather than exiting 0 over nothing.

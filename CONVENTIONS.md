@@ -166,13 +166,79 @@ status, the exact failure it exists to prevent.
   claimed false positive which actually contains a banned stem. Both modes run as a
   required CI job.
 - **Every enforcement script must be observed to reject, not merely to pass (ADR-0019).**
-  All four law scripts (`check_domain_independence`, `check_layers`, `check_law_copies`,
-  `check_dependency_policy`) ship `--self-test` and run it in CI before their scan. A check
-  with only positive evidence is not evidence that a law is enforced — DEF-0001 is what
-  that costs.
+  All six law scripts (`check_domain_independence`, `check_layers`, `check_law_copies`,
+  `check_dependency_policy`, `check_governance_consistency`,
+  `check_metrics_are_declared`) ship `--self-test` and run it
+  in CI before their scan, as does `check_stack_preflight` — which is not a law, but is
+  held to the same standard. A check with only positive evidence is not evidence that a
+  law is enforced — DEF-0001 is what that costs. **This rule binds every enforcement
+  script added later, not only the ones listed here.**
 - **What it cannot catch:** domain dependence expressed as a branch on a data *value*
   rather than as vocabulary. That residual hole is stated in `docs/architecture.md` §1.5
   and §5.3, and is covered — imperfectly — by the ontology-swap test, not by this lint.
+
+### 6a. Metric-declaration lint specification (ADR-0026, ADR-0030, ADR-0031)
+
+LAW-DOMAIN catches the domain arriving as a **word**. A metric computed in engine code is
+the domain arriving as a **value**, and the vocabulary lint cannot see it. A pack declares
+every metric as a `MeasurementExpression` operator tree; a reasoning module **walks** that
+tree and never recomputes what it says. A formula written into engine code does not move
+when the ontology is swapped, and the ontology has then quietly stopped being where the
+metric is defined.
+
+- **Scope:** all `.py` files under `graph_engine/`, `causal_engine/`,
+  `counterfactual_engine/`, `recommendation_engine/`, `explanation_engine/`.
+- **Out of scope, deliberately:** `core/`, whose arithmetic is over confidence components —
+  an engine concept, not a domain metric (ADR-0009); and `ontology_runtime/`, which builds
+  the tree and never evaluates it. Evaluating there would put arithmetic over domain
+  attributes inside the seam that exists to hold no logic.
+- **Matched:** four shapes, over the **AST**, never the text.
+  1. Arithmetic (`+ - * / // % **`) with a metric-named operand.
+  2. An assignment binding a metric-named target to an expression containing arithmetic —
+     `delay = arrival - promised`, which is the commonest form and which rule 1 alone
+     would miss.
+  3. Arithmetic on a **tainted** value: a name bound, anywhere earlier in the same scope,
+     from a metric-named attribute or a metric-named string key. `raw = event["shipping_delay"]`
+     followed by `value = raw - baseline` names no metric in the arithmetic at all, and
+     rules 1 and 2 both miss it (ADR-0031). Taint propagates through rebinding and is
+     tracked **per scope** — a `value` holding a metric in one function must not taint an
+     unrelated `value` in the next.
+  4. A comparison between a metric — named or tainted — and a **numeric literal**:
+     `if delay > 48`. That number is domain policy and belongs in the pack beside the
+     metric it bounds.
+- **Metric stems:** `delay`, `duration`, `cost`, `impact`, `penalty`, `quantity`, `amount`,
+  `price`, `latency` — case-insensitive, letter-only lookbehind, same anchoring as the
+  LAW-DOMAIN matcher and for the same reasons.
+- **`count` and `ratio` are excluded**, though both are `MeasurementKind` members. Both are
+  ordinary program bookkeeping; a lint that fires on `count += 1` is disabled within a week,
+  and a disabled lint enforces nothing.
+- **AST, not regex.** A textual matcher fires on `# the cost of a rerun` and on `"impact"`
+  inside a string literal. Nothing legitimate is gained by making the check unusable in
+  prose.
+- **Not matched:** comparison against a **variable** (`delay > threshold`) — a guard
+  reading a bound from somewhere else, not a policy constant written here; a lint firing on
+  every guard clause would be routed around. Also not matched: a metric passed through a
+  function call, and arithmetic on two genuinely unnamed values from unnamed sources
+  (`v = a - b`, both parameters). Taint is a source-order approximation, not a dataflow
+  analysis — this script is standard-library only (ADR-0016). Every one of these holes is
+  stated rather than hidden, and pinned by a `MUST_NOT_FIRE` entry or a test.
+- **Allowlist:** `.lawmetric-allowlist`, keyed on the **exact identifier**, one reviewed
+  entry per line with a justification. The usual correct fix is to move the formula — or the
+  threshold — into the pack, not to add a line here.
+- **`MUST_NOT_FIRE` entries stay single-line wherever a metric stem appears.** The DEF-0001
+  guard that polices that table is deliberately line-blind, so a multi-line entry could hide
+  a stem on one line and the arithmetic on the next and escape it. A negative case that
+  genuinely needs several lines is asserted in
+  `backend/tests/law/test_enforcement_scripts_prove_themselves.py` instead.
+- **Failure mode:** the job fails the build. It does not warn.
+- **Exit 2 means the check could not run.** While every reasoning package is scaffold-only
+  the scan reports `NOT-YET-RUNNABLE` and exits 2. Emptiness is measured by **content**, not
+  by file count: a package of docstring-only `__init__.py` files must never report as
+  "13 files, clean". `make laws` and the CI job tolerate exit 2 and **only** exit 2 —
+  deliberately not `continue-on-error`, which would swallow a real violation as well. Both
+  tolerances come out at the P2 exit.
+- **Implemented** as `scripts/check_metrics_are_declared.py`, with `--self-test` and with
+  planted-case coverage in `backend/tests/law/test_enforcement_scripts_prove_themselves.py`.
 
 ---
 
@@ -313,7 +379,8 @@ TimeInterval:
     t_earliest : datetime  (UTC, inclusive)
     t_latest   : datetime  (UTC, inclusive)
     precision  : EXACT | SECOND | MINUTE | HOUR | DAY | UNKNOWN
-    provenance : OBSERVED | ASSUMED
+    provenance : OBSERVED | ASSUMED | INFERRED
+    source     : str  (non-empty; the derivation or locator that produced these bounds)
 ```
 
 | precision | Meaning | Interval construction |
@@ -322,14 +389,31 @@ TimeInterval:
 | `SECOND` / `MINUTE` / `HOUR` / `DAY` | Known to that granularity | interval spans the full containing bucket |
 | `UNKNOWN` | No time information | `t_earliest = -inf`, `t_latest = +inf`, provenance `ASSUMED` |
 
+`provenance` admits `INFERRED` (ADR-0021) under two guards, both enforced in the type:
+an `INFERRED` interval may never carry `EXACT` precision, and it never yields a `CERTAIN`
+verdict. Narrowing a window from other evidence is admissible; collapsing it to a point
+instant is imputation, and certifying an inference on inferred bounds would let one
+inference stand on another with no observation underneath. `STATISTICAL` and `SIMULATED`
+remain inadmissible on a timestamp.
+
+`source` is required and non-empty so that a bound can be traced without reading the module
+that produced it. It is excluded from the content-addressed payload — how a bound was
+obtained is not which moment is being described — while the bounds themselves participate,
+so narrowing an interval correctly mints a new identifier.
+
+`TimestampKind` (`EXACT | INTERVAL | INFERRED | UNKNOWN`) is a **derived property** of
+`precision` and `provenance`, never a stored field, so it cannot contradict them.
+
 ### Missing and imprecise timestamps
 
 - **Never impute.** Not `now()`, not epoch, not the previous event's time, not the median.
   Imputation manufactures causality out of nothing.
 - Missing ⇒ `precision = UNKNOWN`, provenance `ASSUMED`.
 - A bound derived from process constraints (e.g. "after the event that caused it") may
-  narrow the interval, but the result is provenance `ASSUMED` and the derivation is
-  recorded as an evidence record.
+  narrow the interval. The result is provenance `INFERRED` (ADR-0021), the derivation is
+  named in `source`, and the supporting evidence record is recorded. `ASSUMED` is for
+  configuration and declared process constraints, not for derived bounds — conflating the
+  two makes a computed window indistinguishable from a value somebody typed into a file.
 - An event with `UNKNOWN` precision may exist in the graph and appear on a timeline, but
   it may never participate in an `INFERRED` causal edge.
 
@@ -338,16 +422,33 @@ TimeInterval:
 LAW-TIME states `cause.timestamp >= effect.timestamp` is forbidden. With intervals that
 becomes a three-valued test:
 
+The tests are applied in this sequence, and the sequence is load-bearing:
+
 | Condition | Verdict | Effect on the edge |
 |---|---|---|
-| `cause.t_latest < effect.t_earliest` | `CERTAIN` | Edge is temporally admissible; may be promoted to `INFERRED`. |
+| either interval has `UNKNOWN` precision | `UNDETERMINED` | Edge is retained and additionally flagged `temporally_unverifiable`. **Blocked from promotion to `INFERRED`.** |
 | `cause.t_earliest >= effect.t_latest` | `VIOLATION` | Edge is rejected. Never created. |
-| intervals overlap | `UNDETERMINED` | Edge may exist as a `CandidateEdge`, is flagged `UNDETERMINED`, and is **blocked from promotion to `INFERRED`**. |
+| `cause.t_latest < effect.t_earliest`, and neither interval is `INFERRED` | `CERTAIN` | Edge is temporally admissible; may be promoted to `INFERRED`. |
+| intervals overlap | `UNDETERMINED` | Edge is retained and flagged `UNDETERMINED`. **Blocked from promotion to `INFERRED`.** |
+
+The `UNKNOWN` guard precedes the `VIOLATION` test because an absent bound cannot support
+any assertion, including the negative one: with no information you cannot claim a violation
+any more than you can claim precedence.
+
+**Overlap is never "before."** An interval timestamp is a *partial* precedence relation.
+Two intervals sharing any instant are incomparable, and the answer is `UNDETERMINED` — never
+a tie broken by a midpoint, a start bound, or a sort position. Each of those manufactures
+precedence the source never recorded.
+
+`temporally_unverifiable` is a separate flag on `CausalEdge`, not a fourth verdict
+(ADR-0022). `UNDETERMINED` means the data placed both events and could not separate them;
+`temporally_unverifiable` means the data never placed one of them. Both block promotion,
+but they are different findings and collapsing them hides which one a run hit.
 
 `UNDETERMINED` is retained rather than discarded so that a data-quality problem stays
 visible instead of silently shrinking the graph. The `UNDETERMINED` count is reported in
-every run summary. See `CONTEXT.md` OQ-002 — this interpretation is the proposed default
-and requires an ADR before module 9 is built.
+every run summary. Ratified by ADR-0007 and extended by ADR-0021; enforced in
+`causalog.core.temporal` and in `CausalEdge.between`, which raises on a `VIOLATION`.
 
 ### Duration and arithmetic
 

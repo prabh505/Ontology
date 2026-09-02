@@ -1,0 +1,474 @@
+# GENERATED PROPOSAL -- NOT A MAPPING.
+#
+# `causalog.ingestion.schema_mapper.suggest` wrote this from a column profile and
+# an ontology pack. `load_mapping` REFUSES a document carrying
+# `status: PROPOSED_UNCONFIRMED`, so nothing can consume it until a human has read
+# every binding, corrected what is wrong, replaced every REVIEW placeholder, and
+# removed the status line in a commit.
+#
+# The heuristics' precision is UNMEASURED: there is no labelled ground truth for
+# column-to-concept mappings, so a high score here means the signals agreed,
+# not that the binding is right. Read the `basis` on each one.
+
+mapping_schema_version: "1.0.0"
+mapping_id: dataco
+mapping_version: "1.0.0"
+ontology_pack: dataco
+description: >-
+  GENERATED PROPOSAL. Replace this description with a statement of what this
+  mapping binds and on whose authority.
+status: PROPOSED_UNCONFIRMED
+
+column_bindings:
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Customer City'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: CUSTOMER
+    attribute: customer_city
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Customer Country'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: CUSTOMER
+    attribute: customer_country
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Customer Id'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: CUSTOMER
+    attribute: customer_reference
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Customer Segment'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: CUSTOMER
+    attribute: customer_segment
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Customer State'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: CUSTOMER
+    attribute: customer_state
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Customer Zipcode'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: CUSTOMER
+    attribute: customer_zipcode
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Department Name'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: DEPARTMENT
+    attribute: department_name
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Department Id'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: DEPARTMENT
+    attribute: department_reference
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Latitude'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: FULFILLMENT_SITE
+    attribute: site_latitude
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Longitude'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: FULFILLMENT_SITE
+    attribute: site_longitude
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order City'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: MARKET_REGION
+    attribute: destination_city
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Country'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: MARKET_REGION
+    attribute: destination_country
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order State'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: MARKET_REGION
+    attribute: destination_state
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Market'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: MARKET_REGION
+    attribute: market_name
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Region'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: MARKET_REGION
+    attribute: region_name
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Days for shipping (real)'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: actual_shipping_days
+    transforms: [TRIM_WHITESPACE, PARSE_INTEGER]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Delivery Status'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: delivery_status
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'shipping date (DateOrders)'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: dispatched_at
+    transforms: [TRIM_WHITESPACE]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Late_delivery_risk'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: late_delivery_risk
+    transforms: [TRIM_WHITESPACE, PARSE_BOOLEAN_FLAG]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Benefit per order'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: order_benefit
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Profit Per Order'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: order_profit
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Id'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: order_reference
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Status'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: order_status
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Type'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: payment_type
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'order date (DateOrders)'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: placed_at
+    transforms: [TRIM_WHITESPACE]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Days for shipment (scheduled)'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER
+    attribute: scheduled_shipping_days
+    transforms: [TRIM_WHITESPACE, PARSE_INTEGER]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Item Discount'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER_ITEM
+    attribute: item_discount
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Item Discount Rate'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER_ITEM
+    attribute: item_discount_rate
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Item Profit Ratio'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER_ITEM
+    attribute: item_profit_ratio
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Item Quantity'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER_ITEM
+    attribute: item_quantity
+    transforms: [TRIM_WHITESPACE, PARSE_INTEGER]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Item Total'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER_ITEM
+    attribute: item_total
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Item Product Price'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER_ITEM
+    attribute: item_unit_price
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Order Item Id'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: ORDER_ITEM
+    attribute: order_item_reference
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Product Status'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: PRODUCT
+    attribute: product_active
+    transforms: [TRIM_WHITESPACE, PARSE_BOOLEAN_FLAG]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Product Name'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: PRODUCT
+    attribute: product_name
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Product Price'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: PRODUCT
+    attribute: product_price
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Product Card Id'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: PRODUCT
+    attribute: product_reference
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Category Name'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: PRODUCT_CATEGORY
+    attribute: category_name
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Category Id'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: PRODUCT_CATEGORY
+    attribute: category_reference
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the attribute, so the binding is read rather than inferred
+  - column: 'Shipping Mode'
+    target_kind: ENTITY_ATTRIBUTE
+    entity_type: SHIPPING_MODE
+    attribute: shipping_mode_name
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Order Item Discount'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: INVENTORY_RESERVED
+    attribute: item_discount
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Order Item Quantity'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: INVENTORY_RESERVED
+    attribute: item_quantity
+    transforms: [TRIM_WHITESPACE, PARSE_INTEGER]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Order Item Product Price'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: INVENTORY_RESERVED
+    attribute: item_unit_price
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Order Profit Per Order'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: ORDER_PLACED
+    attribute: order_profit
+    transforms: [TRIM_WHITESPACE, PARSE_DECIMAL]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Order Id'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: ORDER_PLACED
+    attribute: order_reference
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Type'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: ORDER_PLACED
+    attribute: payment_type
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'order date (DateOrders)'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: ORDER_PLACED
+    attribute: placed_at
+    transforms: [TRIM_WHITESPACE]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Days for shipping (real)'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: SHIPMENT_DELAYED
+    attribute: actual_shipping_days
+    transforms: [TRIM_WHITESPACE, PARSE_INTEGER]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Days for shipment (scheduled)'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: SHIPMENT_DELAYED
+    attribute: scheduled_shipping_days
+    transforms: [TRIM_WHITESPACE, PARSE_INTEGER]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Days for shipping (real)'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: SHIPMENT_DELIVERED
+    attribute: actual_shipping_days
+    transforms: [TRIM_WHITESPACE, PARSE_INTEGER]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Delivery Status'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: SHIPMENT_DELIVERED
+    attribute: delivery_status
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'shipping date (DateOrders)'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: SHIPMENT_DISPATCHED
+    attribute: dispatched_at
+    transforms: [TRIM_WHITESPACE]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Days for shipment (scheduled)'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: SHIPMENT_DISPATCHED
+    attribute: scheduled_shipping_days
+    transforms: [TRIM_WHITESPACE, PARSE_INTEGER]
+  # score 1.000000 -- pack_declared_source_column: the pack names this column on the event type's required attribute
+  - column: 'Shipping Mode'
+    target_kind: EVENT_ATTRIBUTE
+    event_type: SHIPMENT_DISPATCHED
+    attribute: shipping_mode_name
+    transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC]
+
+# Every header column not bound above. Each needs a HUMAN decision: bind
+# it, or replace the placeholder reason with a real one.
+dropped_columns:
+  - column: 'Customer Email'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Customer Fname'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Customer Lname'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Customer Password'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Customer Street'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Order Customer Id'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Order Item Cardprod Id'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Order Zipcode'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Product Category Id'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Product Description'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Product Image'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Sales'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+  - column: 'Sales per customer'
+    reason: >-
+      REVIEW: no binding was suggested and no human decision has been
+      recorded. An unlisted column is a hard error; a column dropped
+      with this placeholder is a decision nobody has made yet.
+
+# Declared attributes NO column was proposed for. Each is a concept the
+# dataset may simply not carry -- confirm that, or find the column.
+#   FULFILLMENT_SITE.site_reference
+
+# Source header, 53 columns, in file sequence:
+#   0. Type
+#   1. Days for shipping (real)
+#   2. Days for shipment (scheduled)
+#   3. Benefit per order
+#   4. Sales per customer
+#   5. Delivery Status
+#   6. Late_delivery_risk
+#   7. Category Id
+#   8. Category Name
+#   9. Customer City
+#   10. Customer Country
+#   11. Customer Email
+#   12. Customer Fname
+#   13. Customer Id
+#   14. Customer Lname
+#   15. Customer Password
+#   16. Customer Segment
+#   17. Customer State
+#   18. Customer Street
+#   19. Customer Zipcode
+#   20. Department Id
+#   21. Department Name
+#   22. Latitude
+#   23. Longitude
+#   24. Market
+#   25. Order City
+#   26. Order Country
+#   27. Order Customer Id
+#   28. order date (DateOrders)
+#   29. Order Id
+#   30. Order Item Cardprod Id
+#   31. Order Item Discount
+#   32. Order Item Discount Rate
+#   33. Order Item Id
+#   34. Order Item Product Price
+#   35. Order Item Profit Ratio
+#   36. Order Item Quantity
+#   37. Sales
+#   38. Order Item Total
+#   39. Order Profit Per Order
+#   40. Order Region
+#   41. Order State
+#   42. Order Status
+#   43. Order Zipcode
+#   44. Product Card Id
+#   45. Product Category Id
+#   46. Product Description
+#   47. Product Image
+#   48. Product Name
+#   49. Product Price
+#   50. Product Status
+#   51. shipping date (DateOrders)
+#   52. Shipping Mode

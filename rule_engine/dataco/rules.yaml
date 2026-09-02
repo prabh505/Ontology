@@ -1,0 +1,699 @@
+# The DataCo SMART Supply Chain rule pack.
+#
+# This file is DATA (prd.md §46: "Never hardcode logistics logic into source code"). It is
+# one of exactly two places in this repository where logistics vocabulary is allowed to
+# live -- the other is `ontology/packs/dataco/` -- and the evaluator that reads it
+# (`backend/src/causalog/rule_engine/`) contains none of it and is checked for that by
+# `scripts/check_domain_independence.py`.
+#
+# EVIDENCE BASIS. Every rule declares `knowledge_provenance`, one of:
+#   DOMAIN_EXPERTISE    a practitioner asserts the mechanism. No row here establishes it.
+#   DATASET_OBSERVATION something measured in the pinned dataset motivated the rule, and
+#                       `evidence_basis` names what.
+#   ASSUMPTION          nobody has evidence. Declared so a reader sees it, never smuggled
+#                       in as expertise. These are visible to users.
+# This is NOT `ProvenanceClass` (ADR-0045): it says where a POLICY came from, not how a
+# FACT came to be known, and the two are never combined.
+#
+# WHAT prd.md §25's CHAIN CANNOT REACH HERE, and why the tail is absent rather than
+# invented. §25 prints:
+#
+#     Inventory Shortage -> Warehouse Delay -> Truck Missed -> Late Delivery
+#                        -> Customer Complaint -> Refund
+#
+# The first four segments are expressible and are authored below. The last two are not:
+#   Customer Complaint  the ontology declares no such event type, because DataCo carries
+#                       "no complaint, contact, or service column of any kind"
+#                       (ontology/packs/dataco/README.md).
+#   Refund              the ontology declares no refund concept at all. The dataset has
+#                       profit and benefit columns, which are outcomes, not occurrences.
+# Writing rules over invented types would manufacture occurrences the source never
+# recorded -- the failure LAW-PROVENANCE and ADR-0029 exist to prevent -- so the chain
+# terminates where the ontology terminates, and the coverage report says so by name.
+#
+# TEMPORAL WINDOWS ARE WIDE, AND THAT IS A PROPERTY OF THE SOURCE. DataCo is one row per
+# line with day-granularity dates; nineteen of twenty event types are DERIVED and most
+# carry `occurred_at: UNKNOWN` (ontology/packs/dataco/mapping.yaml). A narrow window would
+# not be more rigorous, it would be a claim about instants the source never recorded. The
+# LAW-TIME verdict on each firing is what carries the resulting uncertainty, and a pair the
+# data cannot separate is reported UNDETERMINED rather than admitted or dropped (ADR-0007).
+
+rule_pack_schema_version: "1.0.0"
+rule_pack_id: dataco
+rule_pack_version: "1.0.0"
+ontology_pack: dataco
+description: >-
+  Causal, constraint, conditional, joint, amplifying and inhibiting rules over the DataCo
+  ontology's twenty declared event types. Covers prd.md §25's chain as far as the ontology
+  reaches, and no further.
+
+rules:
+
+  # ---------------------------------------------------------------------------
+  # CONSTRAINTS. Structural impossibilities. These PRUNE, and pruning a candidate that
+  # cannot be true is worth as much as proposing one that might be.
+  # ---------------------------------------------------------------------------
+
+  - id: C-DCO-CANCELED-NOT-DELIVERED
+    kind: CONSTRAINT
+    description: >-
+      An order in CANCELED cannot be delivered.
+    rationale: >-
+      CANCELED is a declared terminal state of ORDER (ontology/packs/dataco/ontology.yaml).
+      A terminal state has no exit transition, so an order that reached it participates in
+      no later occurrence. Any candidate edge whose consequent is a delivery of a canceled
+      order is an artefact of two events sharing an identifier, not a causal claim.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      The pack's own lifecycle declaration: CANCELED appears in ORDER.terminal_states and
+      no transition leaves it. This restates a structural fact the ontology already
+      carries, in the form the evaluator can prune with.
+    base_strength: 1.0
+    body:
+      subject_entity_type: ORDER
+      subject_state: CANCELED
+      subject_role: SUBJECT
+      forbidden_event_type: SHIPMENT_DELIVERED
+
+  - id: C-DCO-WITHDRAWN-NOT-DISPATCHED
+    kind: CONSTRAINT
+    description: >-
+      A line in WITHDRAWN cannot be dispatched.
+    rationale: >-
+      WITHDRAWN is a declared terminal state of ORDER_ITEM. A line released back to stock
+      is not subsequently shipped, and a candidate saying it was is a reconstruction error.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ORDER_ITEM.terminal_states declares WITHDRAWN, and the STOCK_SHORTFALL process
+      variant ends at ORDER_CANCELED with no dispatch step.
+    base_strength: 1.0
+    body:
+      subject_entity_type: ORDER_ITEM
+      subject_state: WITHDRAWN
+      subject_role: LINE
+      forbidden_event_type: SHIPMENT_DISPATCHED
+
+  - id: C-DCO-REQUESTED-NOT-PICKED
+    kind: CONSTRAINT
+    description: >-
+      A line still in REQUESTED cannot be picked; stock must be committed first.
+    rationale: >-
+      The ORDER_TO_DELIVERY canonical sequence puts INVENTORY_RESERVED before ITEM_PICKED,
+      and the declared lifecycle offers no REQUESTED -> PICKED transition. Picking an
+      uncommitted line is the prd.md §46 example ("Inventory Empty -> Cannot Pick Product")
+      stated as a rule.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ORDER_ITEM.lifecycle declares REQUESTED -> ALLOCATED -> PICKED and no direct
+      REQUESTED -> PICKED edge; prd.md §46 names this exact prohibition as its worked
+      example of a business rule held as configuration.
+    base_strength: 1.0
+    body:
+      subject_entity_type: ORDER_ITEM
+      subject_state: REQUESTED
+      subject_role: SUBJECT
+      forbidden_event_type: ITEM_PICKED
+
+  # ---------------------------------------------------------------------------
+  # prd.md §25 SEGMENT 1 -- stock shortfall unwinds the line and terminates the order.
+  # ---------------------------------------------------------------------------
+
+  - id: R-DCO-SHORTFALL-RELEASES-LINE
+    kind: CAUSAL
+    description: >-
+      A detected stock shortfall on a line causes that line's commitment to be released.
+    rationale: >-
+      A line that cannot be filled holds a commitment against stock that is not there.
+      Releasing it is the immediate operational response, and the pack's STOCK_SHORTFALL
+      variant sequences the two adjacently.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ontology/packs/dataco/ontology.yaml declares the STOCK_SHORTFALL process variant as
+      ORDER_PLACED, PAYMENT_REQUESTED, PAYMENT_APPROVED, INVENTORY_SHORTFALL_DETECTED,
+      INVENTORY_RELEASED, ORDER_CANCELED. This rule is the first arc of that variant. The
+      dataset does not record the shortfall directly; both event types are DERIVED, which
+      is why the weight is well below 1.
+    base_strength: 0.72
+    body:
+      cause: {binding: CAUSE, event_type: INVENTORY_SHORTFALL_DETECTED}
+      effect: {binding: EFFECT, event_type: INVENTORY_RELEASED}
+      window: {minimum_seconds: 0, maximum_seconds: 604800}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-RELEASE-CANCELS-ORDER
+    kind: CAUSAL
+    description: >-
+      Releasing a line's commitment causes the parent order to be terminated.
+    rationale: >-
+      DataCo carries no partial-fulfilment path: an order whose line is unwound has no
+      remaining route to delivery in any declared variant, so the termination follows.
+    author: rule-engine-build
+    knowledge_provenance: DATASET_OBSERVATION
+    evidence_basis: >-
+      Every declared process variant that contains INVENTORY_RELEASED terminates at
+      ORDER_CANCELED, and no variant contains a release followed by a dispatch. This is an
+      observation about the pack's variant set, which was itself derived from the column
+      vocabulary; it is not a measurement of row frequencies, and it is labelled
+      DATASET_OBSERVATION rather than DOMAIN_EXPERTISE for that reason.
+    base_strength: 0.68
+    body:
+      cause: {binding: CAUSE, event_type: INVENTORY_RELEASED}
+      effect: {binding: EFFECT, event_type: ORDER_CANCELED}
+      window: {minimum_seconds: 0, maximum_seconds: 1209600}
+      relation:
+        direction: TO_FROM
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+        relationship_type: CONTAINS
+
+  # ---------------------------------------------------------------------------
+  # prd.md §25 SEGMENTS 2-4 -- handling delay reaches dispatch, transit, and arrival.
+  # ---------------------------------------------------------------------------
+
+  - id: R-DCO-DISPATCH-BEGINS-TRANSIT
+    kind: CAUSAL
+    description: >-
+      Dispatch causes the consignment to enter transit.
+    rationale: >-
+      The canonical sequence puts SHIPMENT_IN_TRANSIT immediately after
+      SHIPMENT_DISPATCHED. This is the least contestable arc in the pack and is also the
+      least interesting; it is here because a chain with a hole in the middle cannot be
+      traversed.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ORDER_TO_DELIVERY.canonical_sequence places the two adjacently. SHIPMENT_IN_TRANSIT
+      is declared an optional step, so its absence is legitimate and this rule simply does
+      not fire when it is absent.
+    base_strength: 0.80
+    body:
+      cause: {binding: CAUSE, event_type: SHIPMENT_DISPATCHED}
+      effect: {binding: EFFECT, event_type: SHIPMENT_IN_TRANSIT}
+      window: {minimum_seconds: 0, maximum_seconds: 259200}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-DISPATCH-MISS-DELAYS
+    kind: CAUSAL
+    description: >-
+      Dispatch causes the consignment to exceed its promised transit duration.
+    rationale: >-
+      SHIPMENT_DELAYED is reconstructed from the gap between the promised and the actual
+      transit duration, both of which are stamped at dispatch. The dispatch is therefore
+      the occurrence the delay is measured against, and it is where an operator can act.
+    author: rule-engine-build
+    knowledge_provenance: DATASET_OBSERVATION
+    evidence_basis: >-
+      SHIPMENT_DELAYED carries required attributes actual_shipping_days and
+      scheduled_shipping_days, and the pack's SHIPPING_DAYS_VARIANCE measurement is their
+      difference. The LATE_DELIVERY variant is described in the pack as "the single most
+      common departure in this dataset". The frequency claim comes from that pack comment,
+      not from a count this rule performed.
+    base_strength: 0.75
+    body:
+      cause: {binding: CAUSE, event_type: SHIPMENT_DISPATCHED}
+      effect: {binding: EFFECT, event_type: SHIPMENT_DELAYED}
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-TRANSIT-DELAYS
+    kind: CAUSAL
+    description: >-
+      Time in transit causes the promised transit duration to be exceeded.
+    rationale: >-
+      The delay is realised during carriage, not at the moment of dispatch. Both this rule
+      and R-DCO-DISPATCH-MISS-DELAYS may propose an edge into one delay; they are different
+      antecedents for one consequent, which is exactly the candidate graph prd.md §27 asks
+      for, and ranking between them is the Confidence Scorer's job and not this pack's.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      The LATE_DELIVERY variant sequences SHIPMENT_IN_TRANSIT before SHIPMENT_DELAYED. The
+      dataset carries no leg, waypoint or route column, so nothing here distinguishes a
+      delay incurred in carriage from one incurred at the site; that is a limit of the
+      source and is why this weight is below the dispatch rule's.
+    base_strength: 0.62
+    body:
+      cause: {binding: CAUSE, event_type: SHIPMENT_IN_TRANSIT}
+      effect: {binding: EFFECT, event_type: SHIPMENT_DELAYED}
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-DELAY-LATE-ARRIVAL
+    kind: CAUSAL
+    description: >-
+      Exceeding the promised transit duration causes a late arrival.
+    rationale: >-
+      This is prd.md §25's "Late Delivery" segment, and it is the last arc the DataCo
+      ontology can express. What §25 puts after it -- a complaint, then a refund -- has no
+      declared event type here and no column behind it.
+    author: rule-engine-build
+    knowledge_provenance: DATASET_OBSERVATION
+    evidence_basis: >-
+      SHIPMENT_DELIVERED carries delivery_status, whose declared values include
+      LATE_DELIVERY; the source states its own verdict on the outcome. The rule links the
+      reconstructed delay to the arrival the source labelled, and does not claim the
+      source's label is correct.
+    base_strength: 0.81
+    body:
+      cause: {binding: CAUSE, event_type: SHIPMENT_DELAYED}
+      effect: {binding: EFFECT, event_type: SHIPMENT_DELIVERED}
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  # ---------------------------------------------------------------------------
+  # SETTLEMENT PATHS. Not part of §25's chain, but the pack declares four variants for
+  # them and an event type with no rule is a blind spot whether or not §25 named it.
+  # ---------------------------------------------------------------------------
+
+  - id: R-DCO-SETTLEMENT-FAILURE-HOLDS
+    kind: CAUSAL
+    description: >-
+      A failed settlement causes the order to be held.
+    rationale: >-
+      The declared lifecycle moves PENDING_PAYMENT -> ON_HOLD on PAYMENT_FAILED. The hold
+      is the state the failure produces.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ORDER.lifecycle declares the transition {from: PENDING_PAYMENT, to: ON_HOLD,
+      triggered_by: PAYMENT_FAILED}, and the SETTLEMENT_FAILED variant sequences the two.
+    base_strength: 0.78
+    body:
+      cause: {binding: CAUSE, event_type: PAYMENT_FAILED}
+      effect: {binding: EFFECT, event_type: ORDER_HELD}
+      window: {minimum_seconds: 0, maximum_seconds: 604800}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-HOLD-TERMINATES
+    kind: CAUSAL
+    description: >-
+      A held order that is not released is terminated.
+    rationale: >-
+      ON_HOLD has exactly two declared exits: released into PROCESSING, or terminated. When
+      no release is observed the termination is the outcome the hold produced.
+    author: rule-engine-build
+    knowledge_provenance: ASSUMPTION
+    evidence_basis: >-
+      ASSUMPTION. The dataset carries one terminal status per row and no revision history,
+      so nothing distinguishes an order terminated BECAUSE it was held from one terminated
+      for an unrelated reason that also happened to be held. The lifecycle permits the arc;
+      no row establishes it. This assumption is visible to users and its weight is set low
+      to say so.
+    base_strength: 0.35
+    body:
+      cause: {binding: CAUSE, event_type: ORDER_HELD}
+      effect: {binding: EFFECT, event_type: ORDER_CANCELED}
+      window: {minimum_seconds: 0, maximum_seconds: 5184000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-FRAUD-TERMINATES
+    kind: CAUSAL
+    description: >-
+      An order found suspect during review is terminated.
+    rationale: >-
+      The SUSPECTED_FRAUD_PATH variant ends at ORDER_CANCELED, and the declared lifecycle
+      offers SUSPECTED_FRAUD -> CANCELED directly.
+    author: rule-engine-build
+    knowledge_provenance: DATASET_OBSERVATION
+    evidence_basis: >-
+      ORDER.order_status declares SUSPECTED_FRAUD as one of its enumerated values, and the
+      SUSPECTED_FRAUD_PATH variant sequences FRAUD_SUSPECTED before ORDER_CANCELED. Both
+      event types are DERIVED from that one status column, so this rule and the status it
+      rests on are the same evidence seen twice; the weight reflects that rather than the
+      apparent strength of the arc.
+    base_strength: 0.55
+    body:
+      cause: {binding: CAUSE, event_type: FRAUD_SUSPECTED}
+      effect: {binding: EFFECT, event_type: ORDER_CANCELED}
+      window: {minimum_seconds: 0, maximum_seconds: 5184000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-REVIEW-CLEARS-SETTLEMENT
+    kind: CAUSAL
+    description: >-
+      A settlement review that concludes clears the settlement.
+    rationale: >-
+      PAYMENT_REVIEW_OPENED is declared actionable at MODERATE cost, so the arc from a
+      review to its approval is one an operator can shorten. That is the property the
+      Intervention Optimizer needs and the reason this rule earns its place.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ORDER.lifecycle declares PAYMENT_REVIEW -> PROCESSING triggered_by PAYMENT_APPROVED,
+      and the PAYMENT_REVIEW_PATH variant sequences the two.
+    base_strength: 0.66
+    body:
+      cause: {binding: CAUSE, event_type: PAYMENT_REVIEW_OPENED}
+      effect: {binding: EFFECT, event_type: PAYMENT_APPROVED}
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  # ---------------------------------------------------------------------------
+  # HANDLING. Commitment, picking, packing, dispatch -- the site-side chain that reaches
+  # the dispatch miss prd.md §25 calls "Truck Missed".
+  # ---------------------------------------------------------------------------
+
+  - id: R-DCO-COMMITMENT-ENABLES-PICK
+    kind: CAUSAL
+    description: >-
+      Committing stock to a line causes that line to be picked.
+    rationale: >-
+      The canonical sequence puts INVENTORY_RESERVED before ITEM_PICKED, and the declared
+      lifecycle offers no other route into PICKED.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ORDER_ITEM.lifecycle declares ALLOCATED -> PICKED triggered_by ITEM_PICKED, and
+      REQUESTED -> PICKED does not exist. C-DCO-REQUESTED-NOT-PICKED is the prohibition
+      side of the same fact.
+    base_strength: 0.70
+    body:
+      cause: {binding: CAUSE, event_type: INVENTORY_RESERVED}
+      effect: {binding: EFFECT, event_type: ITEM_PICKED}
+      window: {minimum_seconds: 0, maximum_seconds: 1209600}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-PICK-ENABLES-PACK
+    kind: CAUSAL
+    description: >-
+      Picking a line causes it to be packed.
+    rationale: >-
+      Adjacent steps of the canonical sequence, and the only declared route into PACKED.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ORDER_ITEM.lifecycle declares PICKED -> PACKED triggered_by ITEM_PACKED. Neither
+      event type is witnessed by a column; both are BOUNDED_BETWEEN reconstructions
+      (ontology/packs/dataco/mapping.yaml), so their separation is bounded and not observed.
+    base_strength: 0.70
+    body:
+      cause: {binding: CAUSE, event_type: ITEM_PICKED}
+      effect: {binding: EFFECT, event_type: ITEM_PACKED}
+      window: {minimum_seconds: 0, maximum_seconds: 1209600}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-PACK-ENABLES-DISPATCH
+    kind: CAUSAL
+    description: >-
+      Packing a line causes the consignment carrying it to be dispatched.
+    rationale: >-
+      This is the site-to-transport handover, and it is where handling delay becomes
+      transport delay -- prd.md §25's "Warehouse Delay -> Truck Missed" segment.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      The canonical sequence places ITEM_PACKED immediately before SHIPMENT_DISPATCHED, and
+      SHIPMENT_DISPATCHED declares a LINE participant of type ORDER_ITEM, which is the
+      linkage this rule traverses.
+    base_strength: 0.69
+    body:
+      cause: {binding: CAUSE, event_type: ITEM_PACKED}
+      effect: {binding: EFFECT, event_type: SHIPMENT_DISPATCHED}
+      window: {minimum_seconds: 0, maximum_seconds: 1209600}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: LINE
+
+  - id: R-DCO-SETTLEMENT-COMMITS-STOCK
+    kind: CAUSAL
+    description: >-
+      An approved settlement causes stock to be committed to the order's lines.
+    rationale: >-
+      The canonical sequence puts PAYMENT_APPROVED before INVENTORY_RESERVED. This is the
+      arc that joins the settlement chain to the handling chain; without it a root-cause
+      query starting at a late arrival cannot reach a settlement review.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ORDER_TO_DELIVERY.canonical_sequence sequences PAYMENT_APPROVED, INVENTORY_RESERVED.
+      The linkage traverses CONTAINS from the order to its lines, since the two event types
+      have different subjects.
+    base_strength: 0.64
+    body:
+      cause: {binding: CAUSE, event_type: PAYMENT_APPROVED}
+      effect: {binding: EFFECT, event_type: INVENTORY_RESERVED}
+      window: {minimum_seconds: 0, maximum_seconds: 1209600}
+      relation:
+        direction: FROM_TO
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+        relationship_type: CONTAINS
+
+  - id: R-DCO-ARRIVAL-COMPLETES-ORDER
+    kind: CAUSAL
+    description: >-
+      A late or on-time arrival causes the order to be completed.
+    rationale: >-
+      DELIVERED -> COMPLETE is the only declared exit from DELIVERED, so an arrival is the
+      occurrence that completes the order.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ORDER.lifecycle declares DELIVERED -> COMPLETE triggered_by ORDER_COMPLETED, and the
+      canonical sequence places SHIPMENT_DELIVERED immediately before ORDER_COMPLETED.
+    base_strength: 0.74
+    body:
+      cause: {binding: CAUSE, event_type: SHIPMENT_DELIVERED}
+      effect: {binding: EFFECT, event_type: ORDER_COMPLETED}
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-COMPLETION-CLOSES-ORDER
+    kind: CAUSAL
+    description: >-
+      Completing an order causes it to be closed.
+    rationale: >-
+      COMPLETE -> CLOSED is the only declared transition out of COMPLETE, and CLOSED is
+      terminal. Without this arc the terminal state has no rule reaching it and a
+      root-cause traversal from a closed order has nowhere to start.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      ORDER.lifecycle declares COMPLETE -> CLOSED triggered_by ORDER_CLOSED. ORDER_CLOSED
+      is a declared optional step, so its absence is legitimate and this rule then does not
+      fire.
+    base_strength: 0.76
+    body:
+      cause: {binding: CAUSE, event_type: ORDER_COMPLETED}
+      effect: {binding: EFFECT, event_type: ORDER_CLOSED}
+      window: {minimum_seconds: 0, maximum_seconds: 5184000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-DCO-HOLD-RELEASES
+    kind: CAUSAL
+    description: >-
+      A held order that is cleared causes a release back into handling.
+    rationale: >-
+      ON_HOLD has two declared exits and this pack proposes both: released into PROCESSING
+      here, terminated in R-DCO-HOLD-TERMINATES. Two rules proposing different consequents
+      from one antecedent is the candidate graph prd.md §27 asks for; choosing between them
+      is the Confidence Scorer's job, not this pack's.
+    author: rule-engine-build
+    knowledge_provenance: ASSUMPTION
+    evidence_basis: >-
+      ASSUMPTION, and for the same reason as R-DCO-HOLD-TERMINATES: the source carries one
+      terminal status per row and no revision history, so nothing shows an order having
+      been held and then released. The lifecycle permits the arc; no row establishes it.
+      The two rules are deliberately weighted alike, because nothing in this dataset
+      distinguishes which branch an order took.
+    base_strength: 0.35
+    enabled: false
+    disabled_reason: >-
+      ORDER_RELEASED has no emission rule in ontology/packs/dataco/mapping.yaml, so no
+      record can witness it and this rule can never fire. It is carried disabled rather
+      than deleted because the arc is real in the declared lifecycle and becomes live the
+      moment a source records a release; deleting it would lose the analysis.
+      scripts/check_rule_pack.py reports the unreachability, which is how this was found.
+    body:
+      cause: {binding: CAUSE, event_type: ORDER_HELD}
+      effect: {binding: EFFECT, event_type: ORDER_RELEASED}
+      window: {minimum_seconds: 0, maximum_seconds: 5184000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  # ---------------------------------------------------------------------------
+  # CONDITIONAL (prd.md §26). The condition travels as DATA and is reported with every
+  # firing, so a reader sees the value it was evaluated against and not just its verdict.
+  # ---------------------------------------------------------------------------
+
+  - id: R-DCO-SLOW-SERVICE-DELAYS
+    kind: CONDITIONAL
+    description: >-
+      Dispatch causes a delay, but only on the two slowest service levels.
+    rationale: >-
+      prd.md §26's conditional cause: A produces B only if condition C holds. The service
+      level is stamped on the dispatch, so the condition is evaluable from the events
+      themselves and needs no lookup.
+    author: rule-engine-build
+    knowledge_provenance: ASSUMPTION
+    evidence_basis: >-
+      ASSUMPTION. SHIPPING_MODE.shipping_mode_name carries the four service levels the
+      source records, and SHIPMENT_DISPATCHED carries the name as a required attribute. That
+      the two named here are the ones that overrun is NOT measured anywhere in this
+      repository -- no run has counted variance by service level, because no pipeline has
+      run. The rule is authored so the conditional MECHANISM is expressible and testable;
+      its threshold is a placeholder a measured run should replace, and until then it is
+      visible to users as an assumption.
+    base_strength: 0.40
+    body:
+      cause: {binding: CAUSE, event_type: SHIPMENT_DISPATCHED}
+      effect: {binding: EFFECT, event_type: SHIPMENT_DELAYED}
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+      conditions:
+        op: IN
+        values: ["Second Class", "Standard Class"]
+        operands:
+          - op: ATTRIBUTE
+            address: {binding: CAUSE, role: SERVICE, attribute: shipping_mode_name}
+
+  # ---------------------------------------------------------------------------
+  # JOINT (prd.md §26). Several causes JOINTLY produce an outcome. Conjunctive and
+  # unranked: three of four contributors present produces nothing.
+  # ---------------------------------------------------------------------------
+
+  - id: R-DCO-SHORTFALL-AND-REVIEW-TERMINATE
+    kind: JOINT
+    description: >-
+      A stock shortfall together with a settlement review jointly terminate the order.
+    rationale: >-
+      Either alone has a declared path that does not end in termination -- a shortfall can
+      be released and re-committed, a review can approve. The pack asserts that the two
+      together leave no declared route to delivery, which is prd.md §26's contributing
+      cause: several causes jointly producing an outcome that neither alone explains.
+    author: rule-engine-build
+    knowledge_provenance: ASSUMPTION
+    evidence_basis: >-
+      ASSUMPTION. DataCo has one terminal status per row and no revision history, so no row
+      shows an order in two conditions and nothing measures co-occurrence. This rule exists
+      so the JOINT kind is exercised against real vocabulary and so its conjunctive
+      semantics are testable; the joint mechanism it claims is not established by this
+      dataset and is labelled accordingly.
+    base_strength: 0.30
+    body:
+      contributors:
+        - {binding: SHORTFALL, event_type: INVENTORY_SHORTFALL_DETECTED}
+        - {binding: REVIEW, event_type: PAYMENT_REVIEW_OPENED}
+      effect: {binding: EFFECT, event_type: ORDER_CANCELED}
+      window: {minimum_seconds: 0, maximum_seconds: 5184000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+      joint_cause_group_id: STOCK_AND_SETTLEMENT
+
+  # ---------------------------------------------------------------------------
+  # AMPLIFICATION / INHIBITION (prd.md §26). Neither proposes an edge; each rescales the
+  # magnitude of a claim another rule makes.
+  # ---------------------------------------------------------------------------
+
+  - id: M-DCO-SHORTFALL-AMPLIFIES-DELAY
+    kind: AMPLIFICATION
+    description: >-
+      A stock shortfall increases the magnitude of the dispatch-to-delay claim.
+    rationale: >-
+      A line that had to be re-committed enters handling later and with less slack against
+      its promised transit duration, so the delay a dispatch produces is larger when a
+      shortfall preceded it. INVENTORY_SHORTFALL_DETECTED is declared HIGH cost and MAJOR
+      severity, which is the pack's own statement that it matters more than the other
+      handling events.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      The declared actionability of INVENTORY_SHORTFALL_DETECTED (cost_class HIGH,
+      severity_class MAJOR) is the strongest signal in the pack that this event is a
+      disproportionate contributor. The multiplier's SIZE is a judgement, not a
+      measurement, and a measured run should replace it.
+    base_strength: 0.58
+    body:
+      modifier: {binding: MODIFIER, event_type: INVENTORY_SHORTFALL_DETECTED}
+      modifies: R-DCO-DISPATCH-MISS-DELAYS
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+      magnitude_multiplier: 1.4
+
+  - id: M-DCO-FAST-SERVICE-INHIBITS-DELAY
+    kind: INHIBITION
+    description: >-
+      A dispatch on the fastest service level reduces the magnitude of the delay claim.
+    rationale: >-
+      prd.md §26's inhibiting cause: A reduces propagation. An expedited service level has
+      the shortest promised duration and the most schedule protection, so a delay
+      propagating through it should carry less weight.
+    author: rule-engine-build
+    knowledge_provenance: ASSUMPTION
+    evidence_basis: >-
+      ASSUMPTION. The source records the service level and nothing else about it -- no
+      cost, no priority, no service-level agreement. That "First Class" behaves as an
+      expedited service is read from its NAME, which is the weakest possible basis and is
+      exactly the kind of inference the pack's own README warns about. Carried so the
+      INHIBITION kind is exercised and testable; visible to users as an assumption.
+    base_strength: 0.25
+    body:
+      modifier: {binding: MODIFIER, event_type: SHIPMENT_DISPATCHED}
+      modifies: R-DCO-DISPATCH-MISS-DELAYS
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+      magnitude_multiplier: 0.6
+      conditions:
+        op: EQUALS
+        operands:
+          - op: ATTRIBUTE
+            address: {binding: MODIFIER, role: SERVICE, attribute: shipping_mode_name}
+          - op: CONSTANT
+            value: "First Class"

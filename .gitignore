@@ -19,8 +19,13 @@ frontend/node_modules/
 frontend/.next/
 frontend/next-env.d.ts
 
-# Datasets are pinned by hash, never committed (datasets/README.md)
+# Datasets are pinned by hash, never committed (datasets/README.md). The archive is
+# ignored too: a source distribution dropped in datasets/ is the same 18 MB of data
+# the raw/ rule exists to keep out of history, and history is the one place a large
+# file cannot be removed from cheaply.
 datasets/raw/
+datasets/*.zip
+datasets/*.tar.gz
 
 # Local environment
 .env
@@ -32,3 +37,4 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+datasets/clean/

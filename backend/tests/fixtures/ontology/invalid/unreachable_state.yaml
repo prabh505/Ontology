@@ -1,0 +1,103 @@
+# INVALID FIXTURE -- A declared state no transition can reach from any initial state.
+# Derived from tests/fixtures/ontology/valid_minimal.yaml with one defect.
+pack_schema_version: "1.0.0"
+pack_id: minimal
+ontology_version: "1.0.0"
+description: The smallest pack that exercises every namespace.
+
+event_categories:
+  - {id: CORE, description: The only category this fixture needs.}
+
+cost_classes:
+  - {id: LOW, rank: 1, description: A low-cost action.}
+
+severity_classes:
+  - {id: MINOR, rank: 1, description: A minor consequence.}
+
+entity_types:
+  - id: THING
+    description: The one entity type.
+    identifying_keys: [thing_key]
+    attributes:
+      - name: thing_key
+        type: STRING
+        semantics: IDENTIFIER
+        origin: ASSUMED
+        assumption: A fixture has no dataset behind it.
+        description: The natural key.
+    lifecycle:
+      states: [NEW, DONE, STRANDED]
+      initial_states: [NEW]
+      terminal_states: [DONE]
+      transitions:
+        - {from: NEW, to: DONE, triggered_by: FINISHED}
+
+relationship_types:
+  - id: FOLLOWS
+    description: A thing follows another thing.
+    from: THING
+    to: THING
+    cardinality: MANY_TO_ONE
+    temporal_validity: STATIC
+
+event_types:
+  - id: STARTED
+    description: The thing begins.
+    category: CORE
+    observation: OBSERVED
+    provenance_class: OBSERVED
+    participants:
+      - {role: SUBJECT, entity_type: THING}
+    required_attributes:
+      - name: at
+        type: INSTANT
+        semantics: INSTANT
+        origin: ASSUMED
+        assumption: A fixture has no dataset behind it.
+        description: When it began.
+    actionability: {actionable: false, severity_class: MINOR}
+
+  - id: FINISHED
+    description: The thing ends.
+    category: CORE
+    observation: OBSERVED
+    provenance_class: OBSERVED
+    participants:
+      - {role: SUBJECT, entity_type: THING}
+    required_attributes:
+      - name: at
+        type: INSTANT
+        semantics: INSTANT
+        origin: ASSUMED
+        assumption: A fixture has no dataset behind it.
+        description: When it ended.
+    preconditions:
+      - {role: SUBJECT, state_in: [NEW]}
+    postconditions:
+      - {role: SUBJECT, state: DONE}
+    actionability: {actionable: true, cost_class: LOW, severity_class: MINOR}
+
+external_event_types:
+  - id: OUTSIDE
+    description: Something from outside.
+    category: CORE
+    status: DECLARED_UNPOPULATED
+    note: Declared so the fixture exercises the external namespace; never populated.
+
+process_definitions:
+  - id: START_TO_FINISH
+    description: The canonical flow.
+    anchor_entity_type: THING
+    canonical_sequence: [STARTED, FINISHED]
+
+measurement_definitions:
+  - id: ELAPSED
+    description: Time from start to finish.
+    kind: DURATION
+    unit: HOURS
+    provenance_class: INFERRED
+    expression:
+      op: DURATION_BETWEEN
+      operands:
+        - {op: ATTRIBUTE, event_type: STARTED, attribute: at}
+        - {op: ATTRIBUTE, event_type: FINISHED, attribute: at}

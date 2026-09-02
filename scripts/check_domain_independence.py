@@ -55,6 +55,19 @@ BANNED_STEMS = (
 
 IN_SCOPE_PACKAGES = (
     "core",
+    # `ontology_runtime` loads the domain description and must never name what it loads
+    # (ADR-0026). It was outside this list until the ontology layer shipped, which meant the
+    # one package built to keep the domain out was the one package not checked for it.
+    "ontology_runtime",
+    # `ingestion` and `extraction` read the domain description and the schema mapping, and
+    # must never NAME what they read. Added 2026-08-30 with modules 1 and 2 (ADR-0037), for
+    # the reason ADR-0026 gave when it added `ontology_runtime`: the packages built to keep
+    # the domain out were the packages not being checked for it. DataCo column names live in
+    # `ontology/packs/dataco/mapping.yaml` (data, exempt) and in
+    # `causalog.persistence.sources.dataco` (outside this scan by design -- see that
+    # package's README), and in no third place.
+    "ingestion",
+    "extraction",
     "graph_engine",
     "causal_engine",
     "counterfactual_engine",
@@ -250,9 +263,45 @@ def no_must_not_fire_entry_hides_a_stem() -> int:
     return failures
 
 
+def every_in_scope_package_is_really_scanned() -> int:
+    """Refuse an `IN_SCOPE_PACKAGES` entry that contributes no file to the scan.
+
+    A package name that does not resolve -- misspelled, moved, or removed -- contributes
+    zero files and the scan reports clean for it. That is indistinguishable from a package
+    that was scanned and found innocent, which is the DEF-0001 shape and the reason
+    `ontology_runtime` went unchecked until ADR-0026 noticed. So the membership of that
+    tuple is itself checked, and a package legitimately holding no scannable file has to
+    say so by leaving the tuple.
+    """
+    failures = 0
+    for package in IN_SCOPE_PACKAGES:
+        base = PACKAGE_ROOT / package
+        if not base.exists():
+            print(
+                f"SELF-TEST FAILED: IN_SCOPE_PACKAGES names {package!r}, which does not "
+                f"exist at {base}. An unresolvable package scans nothing and reports clean."
+            )
+            failures += 1
+            continue
+        scannable = [
+            path
+            for path in base.rglob("*")
+            if path.is_file() and path.suffix in SCANNED_SUFFIXES
+        ]
+        if not scannable:
+            print(
+                f"SELF-TEST FAILED: IN_SCOPE_PACKAGES names {package!r}, which holds no "
+                f"file with a scanned suffix {SCANNED_SUFFIXES}. Zero files scanned is not "
+                "the same answer as zero violations found."
+            )
+            failures += 1
+    return failures
+
+
 def self_test() -> int:
     """Prove the matcher fires on every form vocabulary takes, and only on those."""
     failures = no_must_not_fire_entry_hides_a_stem()
+    failures += every_in_scope_package_is_really_scanned()
 
     for sample in MUST_FIRE:
         if not PATTERN.search(sample):
@@ -274,7 +323,8 @@ def self_test() -> int:
         print(
             f"self-test passed: {len(MUST_FIRE)} vocabulary forms fire, "
             f"{len(MUST_NOT_FIRE)} non-domain words stay clean, "
-            "and no claimed false positive hides a banned stem."
+            "no claimed false positive hides a banned stem, and all "
+            f"{len(IN_SCOPE_PACKAGES)} in-scope packages really contribute files."
         )
     return failures
 

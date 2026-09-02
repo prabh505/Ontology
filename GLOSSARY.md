@@ -40,14 +40,14 @@ immediately after an event (prd.md §12, §20).
 **NOT.** Not a status string from the source data (see §2.4). Not global — a state belongs
 to exactly one entity. Not a time range by itself; a state plus its interval is a fact
 about one entity over one span.
-**Where.** State Engine `[planned]`.
+**Where.** State Engine `[built]`.
 
 ### Transition
 **Definition.** A movement between two states of the same entity, caused by an event
 (prd.md §12, §20). Carries `from_state`, `to_state`, and the causing event.
 **NOT.** Not a causal edge between events. A transition is intra-entity and `OBSERVED`; a
 causal edge is inter-event and usually `INFERRED`.
-**Where.** State Engine `[planned]`.
+**Where.** State Engine `[built]`.
 
 ### Relationship
 **Definition.** A structural, comparatively stable connection between entities — the
@@ -57,11 +57,36 @@ entities they connect.
 **Where.** Relationship Resolver `[planned]`.
 
 ### Timeline
-**Definition.** The temporally ordered sequence of events belonging to one operational
-process instance (prd.md §24).
-**NOT.** Not a causal chain — adjacency on a timeline implies ordering only, never
-causation. Not a UI widget.
-**Where.** Timeline Builder `[planned]`.
+**Definition.** The sequenced view of events belonging to one or more entities —
+`PROCESS_INSTANCE` (one process definition's anchor entity, sequenced against its declared
+steps), `ENTITY` (one entity's full observed participation, no process definition involved),
+or `JOINED` (the composed merge of two or more already-built timelines, generic over what
+kind of entity produced either input). A `Timeline`'s `entries` mix observed `EVENT`
+positions with explicit `GAP` markers for a declared step no record witnessed.
+**NOT.** Not a causal chain — adjacency on a timeline implies sequence only, never
+causation. Not a UI widget. A `GAP` is never a fabricated event with a guessed timestamp.
+**Where.** Timeline Builder `[built]`; the type itself is declared in `causalog.core`
+(ADR-0042), alongside `Event`/`State`/`Transition`.
+
+### Sequence Provenance
+**Definition.** The field on a `TimelineEntry` (and, by the same rule, on a `State`'s
+`held_over` interval) naming how confidently its position relative to its neighbour was
+decided: `OBSERVED` when `core.temporal.verdict` returned `CERTAIN` for the adjacent pair,
+`ASSUMED` when the verdict was `UNDETERMINED` (a tie or overlap) and the position was
+settled by the documented, stable tie-break rule (`event_id`) instead (ADR-0043).
+**NOT.** Not a claim about which event truly happened first when `ASSUMED` — it is a
+rendering choice made for determinism, explicitly marked as one rather than left
+indistinguishable from a verified sequence.
+**Where.** Timeline Builder, State Engine `[built]`.
+
+### Conformance Score
+**Definition.** Per process instance: the count of a process definition's required steps
+(`canonical_sequence` minus `optional_steps`) witnessed by that instance's events, divided
+by the total required-step count. Reported per instance and as a dataset-wide distribution
+in `TimelineQualityReport`.
+**NOT.** Not a judgement about whether the instance is "correct" — a low score is a finding
+about what the data contains, and is never used to reject or resort a timeline.
+**Where.** Timeline Builder `[built]`.
 
 ### Temporal Property Graph
 **Definition.** The canonical graph structure holding entities, events, states,
@@ -168,10 +193,32 @@ output in `PROGRESS.md`.
 
 ### Time Interval / Precision
 **Definition.** The representation of an event's time as `[t_earliest, t_latest]` plus a
-precision tag (`EXACT | SECOND | MINUTE | HOUR | DAY | UNKNOWN`) (`CONVENTIONS.md` §10).
+precision tag (`EXACT | SECOND | MINUTE | HOUR | DAY | UNKNOWN`), a provenance class
+(`OBSERVED | ASSUMED | INFERRED`), and a required `source` naming the derivation or locator
+that produced the bounds (`CONVENTIONS.md` §10; ADR-0021).
 **NOT.** Not a single datetime. Not a duration. Not imputable — a missing timestamp is
-`UNKNOWN`, never filled in.
-**Where.** `core/` `[planned]`; produced by Event Generator.
+`UNKNOWN`, never filled in. Not a total precedence relation: two intervals that overlap are
+incomparable, and overlap is never "before".
+**Where.** `core/temporal.py`; produced by Event Generator `[planned]`.
+
+### Timestamp Kind
+**Definition.** The derived label for a timestamp's shape: `EXACT` (one observed instant),
+`INTERVAL` (pinned to a coarser granularity), `INFERRED` (bounds narrowed by derivation from
+other evidence), `UNKNOWN` (never placed by the source). Computed from `precision` and
+`provenance` (ADR-0021).
+**NOT.** Not a stored field — deriving it is what stops it contradicting the two fields it
+summarizes. Not a precision: `INFERRED` says how the bounds were obtained, not how tight
+they are.
+**Where.** `core/temporal.py`.
+
+### Temporally Unverifiable
+**Definition.** A flag on a `Causal Edge` recording that at least one of its two events has
+an `UNKNOWN` timestamp, so no temporal assertion about the pair is possible (ADR-0022).
+**NOT.** Not the same as `UNDETERMINED`. `UNDETERMINED` means the data placed both events
+and could not separate them; *temporally unverifiable* means the data never placed one of
+them. Not a silent pass — such an edge is retained, reported, and barred from promotion to
+`INFERRED`.
+**Where.** `core/types/causal_edge.py`; stamped by `CausalEdge.between`.
 
 ### Causal Edge types (prd.md §26)
 
@@ -182,6 +229,43 @@ precision tag (`EXACT | SECOND | MINUTE | HOUR | DAY | UNKNOWN`) (`CONVENTIONS.m
 | **Contributing Cause** | Several causes jointly produce an outcome; none is sufficient alone. | Not a ranked list — contributors are conjunctive, not competing. |
 | **Amplifying Cause** | Increases the magnitude of a downstream effect without being its origin. | Not a cause of the effect's *existence*, only of its size. |
 | **Inhibiting Cause** | Reduces propagation of a downstream effect. | Not the absence of a cause; an inhibitor is a positive, recorded event. |
+
+Each kind is a **first-class payload type**, not a string label on a shared edge (ADR-0022):
+`DirectCause` (no fields — the absence of extra data is the claim), `ConditionalCause`
+(`condition_expression`, `condition_holds`), `ContributingCause` (`joint_cause_group_id`,
+`co_cause_event_ids`), `AmplifyingCause` (`magnitude_multiplier > 1.0`), `InhibitingCause`
+(`0.0 <= magnitude_multiplier < 1.0`). They form a discriminated union under
+`CausalEdgePayload`, so an edge missing the data its kind requires cannot be constructed.
+**Where.** `core/types/causal_edge.py`.
+
+### Evidence Item
+**Definition.** One independently re-verifiable reason an assertion is believed: a `kind`
+drawn from the closed `EvidenceKind` set (prd.md §27), a description, the supporting
+artifact identifiers, a strength, and — the load-bearing field — the exact rule identifier
+or query text under `verification` (LAW-EVIDENCE).
+**NOT.** Not an `Evidence Record`. A record is a *citation* into a dataset; an item is a
+*justification* built on top of one. Not a confidence: confidence is a vector assembled from
+many items. An item nobody can re-execute is a defect, not a weak item.
+**Where.** `core/types/evidence.py`.
+
+### Aggregator
+**Definition.** A pure, named function from confidence components to a scalar rollup in
+`[0.0, 1.0]`, registered by name in `AGGREGATORS` (ADR-0009). Two ship: `weighted_mean_v1`
+(the default) and `minimum_v1` (conservative). The name travels with the data in
+`ConfidenceVector.aggregation`.
+**NOT.** Not a way of combining provenance — that is always the weakest class present, and
+is computed separately. Not authoritative: the components are the value, the scalar is a
+convenience.
+**Where.** `core/aggregation.py`.
+
+### Lifecycle
+**Definition.** The ontology-declared state space an entity type may move through: the set
+of legal state names and the legal moves between them. Carried on `Entity`, provenance
+always `ASSUMED`.
+**NOT.** Not learned from the data — the engine checks observations against the declaration
+rather than inferring it. Not the entity's *current* state, which is a function of the
+entity and an instant and is computed by `core.derivation.current_state`, never stored.
+**Where.** `core/types/entity.py`.
 
 ### Run
 **Definition.** The unit of reproducibility: the tuple `(dataset_version, ontology_hash,
@@ -210,11 +294,58 @@ artifact. Explicitly excluded from every determinism diff by `scripts/check_dete
 
 ### Rule Pack
 **Definition.** A versioned, conflict-checked set of causal rules expressed as **data**
-under `rule_engine/<domain>/` (prd.md §46). `rule_pack_version` participates in the
-`run_id`, so editing a rule creates a new Run.
-**NOT.** Not source code. Not optional — a pack that contradicts itself raises
+under `rule_engine/<domain>/rules.yaml` (prd.md §46). `rule_pack_version` participates in the
+`run_id`, so editing a rule creates a new Run. Six rule kinds: the five prd.md §26 causal
+categories (`CAUSAL`, `CONDITIONAL`, `JOINT`, `AMPLIFICATION`, `INHIBITION`) plus
+`CONSTRAINT`.
+**NOT.** Not source code. There is no expression string, no callable reference and no plugin
+hook anywhere in the schema. Not optional — a pack that contradicts itself raises
 `RuleConflictError` at load time, never a runtime coin-flip.
-**Where.** `rule_engine/` (data); loaded by `causalog.rule_engine` `[planned]`.
+**Where.** `rule_engine/<domain>/` (data); loaded and evaluated by `causalog.rule_engine`
+(ADR-0044).
+
+### Constraint Rule
+**Definition.** A rule stating a structural impossibility — an entity in a named state
+cannot participate in a named event type. It **prunes** candidates rather than proposing
+them, which is why it is a sixth kind with no `CausalEdge` counterpart.
+**NOT.** Not a negative causal rule, and not rankable. When a constraint and a generator
+disagree the constraint wins, unconditionally and documented (ADR-0047) — a weight is a
+strength of belief about a claim and a constraint is a statement of impossibility, and
+comparing them would make impossibility purchasable with a large enough weight.
+**Where.** `rule_engine/<domain>/rules.yaml`; applied by `causalog.rule_engine.evaluate`.
+
+### Knowledge Provenance
+**Definition.** Where a RULE's knowledge came from: `DOMAIN_EXPERTISE`,
+`DATASET_OBSERVATION`, or `ASSUMPTION` (ADR-0045). Every rule declares one plus a non-empty
+`evidence_basis`; an `ASSUMPTION` with an empty basis is refused at load.
+**NOT.** Not `ProvenanceClass`, and the two are never combined. `ProvenanceClass` answers
+*how a fact came to be known* and is folded by `core.aggregation.combine`; this answers
+*where a policy came from*. A rule carrying `ASSUMED` would invite that fold and would claim
+an assumption about the world is the same kind of thing as an unrecorded timestamp.
+**Where.** `causalog.rule_engine.dsl.KnowledgeProvenance`.
+
+### Rule Firing
+**Definition.** One rule matching one binding of events, carrying the whole of its
+reasoning: the bindings, the matched event identifiers, every condition evaluated with the
+value it read, the observed separation, and the LAW-TIME verdict.
+**NOT.** Not a causal edge — Module 9 owns the LAW-TIME gate and `CausalEdge` construction,
+and this layer returns fired rule identifiers to it. Not a confidence: `base_strength` is the
+rule's authored weight, the one admissible bare float here, named as `EvidenceItem.strength`
+is named so it is not mistaken for a judgement. **A firing without its trace cannot be
+constructed** (ADR-0047) — it raises, so it does not exist to be persisted or shown.
+**Where.** `causalog.rule_engine.trace.RuleFiring`.
+
+### Rule Coverage / Blind Spot
+**Definition.** Which declared event types have a rule EXPLAINING them (naming them as a
+consequent). A **blind spot** is a witnessable declared type that no enabled rule explains:
+an occurrence of one can never receive an incoming candidate edge, so a root-cause query
+reaching it stops there.
+**NOT.** Not a quality score, and not a target to raise. Coverage is measured over
+**declared** types, deliberately — the denominator that flatters a pack is the one that
+hides a declared type having no rule. A type nothing can witness is reported separately, so
+coverage cannot be raised by writing rules for types no record will ever produce.
+**Where.** `causalog.rule_engine.coverage`; `scripts/check_rule_pack.py`;
+`docs/reports/<domain>/rule-coverage.md`.
 
 ### Engine Version
 **Definition.** The version of the reasoning code itself, participating in the `run_id`.
@@ -266,8 +397,177 @@ by: a storm is not actionable, a dispatch is.
 `OntologyMappingError`. Not a property the reasoning core may look up: it lives on the
 `Event` precisely so the Root Cause Analyzer never reads the ontology (forbidden edge F3).
 Not verifiable — a mis-declared flag silently changes the ranking (`CONTEXT.md` R-15).
-**Where.** `ontology/<domain>/ontology.yaml` (data); `core/types/event.py`; consumed by
-Root Cause Analyzer `[planned]`.
+**Where.** `ontology/packs/<domain>/ontology.yaml`, in the `actionability` block of each
+event type, alongside its `cost_class` and `severity_class` (ADR-0026);
+`core/types/event.py`; consumed by Root Cause Analyzer `[planned]`.
+
+### Domain Pack
+**Definition.** One `ontology/packs/<domain>/ontology.yaml`: the complete declarative
+description of a domain, in nine namespaces — event categories, cost classes, severity
+classes, entity types, relationship types, event types, external event types, process
+definitions, measurement definitions (ADR-0026). It is the `OntologySpec` seam
+(`docs/architecture.md` §5.1) and the only place domain vocabulary may live.
+**NOT.** Not code, and not extensible by code: there is no expression string, no callable
+reference, and no plugin hook anywhere in the schema. Not a configuration file that the
+engine falls back from — an unmapped value is a hard error, never a default. Not a
+correctness guarantee: a pack that validates cleanly can still be semantically wrong
+(`CONTEXT.md` R-16).
+**Where.** `ontology/packs/`; loaded by `causalog.ontology_runtime`; specified in
+`docs/ontology.md`.
+
+### Pack Schema Version
+**Definition.** The version of the **DSL itself** (`PACK_SCHEMA_VERSION`, `1.0.0`), declared
+by every pack and identical across all of them. A pack declaring a different value is
+refused rather than best-effort parsed.
+**NOT.** Not `ontology_version`, which is each individual pack's own semver and moves
+independently. Two numbers on purpose: one says which language the pack is written in, the
+other says which revision of that pack this is.
+**Where.** `causalog.ontology_runtime.dsl`; `CONTEXT.md` §7.
+
+### Base Pack / Overlay
+**Definition.** A pack may `extend` another. The **base pack** (`_base`) declares what is
+true of every domain — today the ordinal cost and severity vocabularies and nothing else.
+The **overlay** is the domain pack that extends it. Merging is by identifier, per namespace,
+with **whole-entry replacement**: an overlay entry replaces the base entry entirely, a new
+identifier is appended, and a base identifier is withdrawn only through an explicit
+`removes:` block (ADR-0027).
+**NOT.** Not a deep merge — the effective declaration would then exist in no file. Not
+removable by omission: omission and decision must not be the same text, so a withdrawal that
+removes nothing is a load error.
+**Where.** `ontology/packs/_base/`; `causalog.ontology_runtime.resolution`.
+
+### Derived Event Type
+**Definition.** An event type the source **implies rather than logs** — declared
+`observation: DERIVED`, carrying a `derivation.basis` naming what it is reconstructed from
+and a `default_confidence` (ADR-0029). The canonical case: DataCo records a shipping date
+column and no dispatch record, so `SHIPMENT_DISPATCHED` is derived from the date.
+**NOT.** Never `OBSERVED`. A derived event may not claim observed provenance, and the loader
+refuses a pack in which one does. The distinction is load-bearing because a fabricated
+occurrence with a real column standing behind it reads as *better* evidence than an honest
+gap. Not the same as a low-confidence observation: provenance is how a thing came to be
+known, confidence is how sure we are (`docs/contracts.md` §4).
+**Where.** `ontology/packs/<domain>/ontology.yaml`; enforced in
+`causalog.ontology_runtime.dsl` and `structural.py`.
+
+### Process Definition
+**Definition.** A named canonical flow: the expected happy-path sequence of event types for
+one anchor entity type, plus its declared variants, optional steps and repeatable steps. It
+is what the Timeline Builder groups against and the Rule Engine reasons against.
+**NOT.** Not a constraint. A run that departs from the canonical sequence produces a
+*finding*, never a rejected record — the process states what was expected, not what is
+permitted.
+**Where.** `ontology/packs/<domain>/ontology.yaml`, `process_definitions`.
+
+### Emission Rule
+**Definition.** The machine-readable statement of **which records witness one event type's
+occurrence**: a closed `ConditionExpression` operator tree plus a declared `occurred_at`
+policy, one per event type, in `ontology/packs/<domain>/mapping.yaml` (ADR-0039). It is the
+executable half of a Derived Event Type's `derivation.basis`, which is prose.
+**NOT.** Not a statement about the domain — that is the basis, and it lives in the pack so a
+second dataset for the same domain reuses it unchanged. Not a place a provenance class can
+be named: an emitted event takes the class its event type declares, so a rule has no path to
+an `OBSERVED` event. Not an expression string; a data file that becomes executable defeats
+review and hashing alike (ADR-0026, ADR-0039).
+**Where.** `ontology/packs/<domain>/mapping.yaml`, `event_emissions`; schema in
+`causalog.ingestion.schema_mapper.dsl`; evaluated in
+`causalog.extraction.event_generator.conditions`.
+
+### Occurrence
+**Definition.** One thing that happened, as distinct from the records that witness it. Two
+records agreeing on event type, participants, interval and recorded attributes witness ONE
+occurrence and become ONE `Event` whose `evidence_record_ids` names both.
+**NOT.** Not a record. On a source whose records are sub-items of a larger transaction,
+emitting one event per record multiplies every downstream count by the average sub-item
+count — which looks, from the inside, exactly like a busier business.
+**Where.** `causalog.extraction.event_generator.emit.occurrence_key`.
+
+### Process-Coverage Gap
+**Definition.** A step a Process Definition expects for one anchor entity and no event
+supplies. Reported per process, per step, with the count of instances expecting it and
+whether **any** record could ever witness it.
+**NOT.** Not one thing. A step absent from ONE instance is a fact about that instance; a
+step absent from EVERY instance because no emission rule can witness it is a fact about the
+source, and it bounds every conclusion drawn around it. Collapsing the two buries the second
+inside the first. Not an error, and never filled: under the default `RECORD_GAP` policy no
+event is fabricated (ADR-0040).
+**Where.** `causalog.extraction.event_generator.coverage`; reported in the Event Quality
+Report.
+
+### Reconciliation Report
+**Definition.** Module 3's account of identity resolution: entities created, records merged
+into an existing entity, entities carrying a recorded attribute disagreement, records naming
+no derivable key, and attribute versions — per entity type, with the active `ConflictPolicy`.
+**NOT.** Not a log line. Identity resolution is the one step whose mistakes are invisible
+afterwards: two participants merged into one produce a graph that is well-formed,
+self-consistent and wrong. Not a function of the policy: every disagreement is reported
+under every policy that tolerates one, because a report that could be quieted by
+configuration is a report about configuration.
+**Where.** `causalog.extraction.entity_extractor.report`.
+
+### Event Quality Report
+**Definition.** Module 4's account of the event log it produced: counts by type and by
+provenance class, the timestamp-precision and timestamp-kind distributions, orphan events,
+conditions that could not be evaluated, process coverage per definition, and the active
+missing-event and conflict policies.
+**NOT.** Not optional, and not a score. The causal engine's honesty depends on knowing what
+it does not have — a graph built on an unmeasured event log looks exactly like one built on
+a complete log, and the difference surfaces only as a confident wrong answer. It carries no
+grade, because a report that scored itself would invite tuning the score.
+**Where.** `causalog.extraction.event_generator.quality`.
+
+### Attribute Version
+**Definition.** One recorded value of one attribute of one entity, with the instant the
+source dates its statement to (the identity binding's declared `observed_at`), its citation,
+and whether a later version supersedes it.
+**NOT.** Not a field of `Entity`. The entity's content address deliberately excludes its
+attributes, so enriching an entity must not rename it (`docs/contracts.md` §5); a version
+carried inside would either mutate a frozen artifact or mint a second identifier for one
+participant. Not a record of when the value CHANGED — no source in this project records
+that. A version exists only where the value differed from the one already held; a record
+that repeated what was known introduces nothing.
+**Where.** `causalog.extraction.entity_extractor.versioning`.
+
+### Measurement Definition
+**Definition.** How one domain metric (a delay, a cost, an impact) is computed from event
+attributes, expressed as a closed declarative operator tree — `CONSTANT`, `ATTRIBUTE`,
+`SUM`, `DIFFERENCE`, `PRODUCT`, `RATIO`, `DURATION_BETWEEN`, `MINIMUM`, `MAXIMUM`
+(ADR-0026). It exists so that no metric formula is hardcoded in a reasoning module.
+**NOT.** Not an expression string and not evaluated by the ontology layer. A tree can be
+inspected, diffed and hashed without being executed; a string has to be executed before
+anyone knows what it says. A metric the operator set cannot express requires a new operator
+and an ADR, never an escape hatch.
+**Where.** `ontology/packs/<domain>/ontology.yaml`, `measurement_definitions`.
+
+### Cost Class / Severity Class
+**Definition.** Pack-declared ordinal vocabularies, each member carrying an explicit `rank`.
+An actionable event type names a `cost_class`; every event type names a `severity_class`.
+Root-cause ranking and intervention costing read the ranks.
+**NOT.** Not names the engine knows — a ranker compares `rank` and never reads the
+identifier, which is what lets an unrelated domain declare an unrelated vocabulary. A cost
+class is not a currency amount: `cost.yaml` maps the class to an ordinal band, and no
+monetary figure is ever inferred (`CONTEXT.md` OQ-013).
+**Where.** `ontology/packs/_base/ontology.yaml`, inherited by every domain.
+
+### ontology_hash
+**Definition.** The content address of a **resolved** pack:
+`digest(ONTOLOGY, to_canonical_json(resolved_pack))`, rendered `ont:<16 hex>` (ADR-0028). It
+participates in `run_id` (ADR-0013).
+**NOT.** Not a hash of the file. It is invariant to comments, indentation, key sequence, and
+how a pack was split across an inheritance chain — none of which changes what the pack says
+— and sensitive to every declared value. Not a statement about correctness: it establishes
+identity only.
+**Where.** `causalog.ontology_runtime.hashing`; `CONTEXT.md` §7.
+
+### NOT_RUNNABLE (diagnostic severity)
+**Definition.** A pack diagnostic reporting a check the validator **could not perform**,
+distinct from `ERROR` (the pack is refused) and `WARNING` (it is not). Emitted by the
+ontology loader (`ONT-N-RULE-COVERAGE`, when no rule pack is supplied) and by the rule
+loader (`RUL-N-VOCABULARY`, when no ontology is supplied; `RUL-N-CONDITIONAL-CONFLICT`, for
+the contradictions no static check can decide).
+**NOT.** Not a passing check, and never silently omitted. It exists because this repository
+has twice mistaken an unrunnable check for a passing one — DEF-0001, where a lint matched
+nothing, and OQ-014, where a determinism gate has no pipeline to run against.
+**Where.** `causalog.ontology_runtime.diagnostics`.
 
 ### Graph relationship types (prd.md §47)
 `CAUSES` · `PRECEDES` · `BELONGS_TO` · `LOCATED_AT` · `TRANSITIONS_TO` · `PART_OF` ·
@@ -277,6 +577,135 @@ Root Cause Analyzer `[planned]`.
 `INFERRED`. Writing `CAUSES` where only ordering is known is the single most damaging
 defect this system can contain. `PRECEDES` lives in the Temporal Property Graph;
 `CAUSES` may only be written by the Confidence Scorer.
+
+### Valid Time
+The interval over which the world was in a described condition — `State.held_over`,
+`Relationship.valid_over`. One of the two axes of [[Bi-temporal]] storage. It is the
+interval the reasoning core computes over, and it is the only one of the two that appears
+in a content address.
+
+### System Time
+The interval over which *this system believed* something — `system_from` to `system_to`,
+where `'infinity'` means "still believed". Database-managed. It appears in no
+`causalog.core` type, in no content address, and in no output envelope, and no reasoning
+module may read it: an identifier that depended on insertion wall-clock would stop being
+reproducible (ADR-0013). Closing a system period is the single mutation the fact store
+admits.
+
+### Bi-temporal
+Carrying Valid Time and System Time as two independent axes (ADR-0032). Applied to
+`state`, `state_transition`, and `relationship`, because those are the artifacts a
+re-inference can legitimately restate. A correction **inserts** a superseding row and
+**closes** the prior belief; it never edits one. Without the second axis a re-derivation
+would overwrite the interval a past conclusion was computed against, and that conclusion
+would become unreproducible, unauditable, and incomparable at the same moment — silently.
+
+### Retraction
+Closing a belief's System Time. It records that the engine has stopped believing something;
+it does not remove what the engine believed. Not a deletion: every past conclusion computed
+against the retracted belief would otherwise become unauditable.
+
+### Schema Migration
+One numbered, raw-SQL change to the PostgreSQL schema, shipped with its exact reverse under
+the same basename (ADR-0033). `NNNN_<verb>_<subject>.sql`. There is no ORM and no migration
+framework (ADR-0015); the numeric prefix is the only thing ordering the series.
+
+### Migration Ledger
+`schema_migration` — the authority on what schema a database holds, recording each applied
+migration's version, name, content hash, instant, and duration. A schema whose ledger is
+empty is indistinguishable from an unmigrated one, which is why the PostgreSQL init
+directory is not used to apply migrations: it applies them without writing a ledger.
+
+### Projection Namespace
+The identifier of one build of the [[Graph Projection]], stamped on every node and
+relationship it contains. Staging a rebuild into a new namespace is what lets the live
+projection keep serving while a rebuild runs, and what makes a failed rebuild harmless.
+Which namespace is live is recorded in PostgreSQL, never asked of the graph store — the
+derived store has no authority (ADR-0001).
+
+### Projection Content Hash
+A canonical hash over the sorted token stream of one projection namespace. Two rebuilds of
+one `run_id` must produce the same hash; a difference is a **determinism defect**, not a
+retryable error, because it means something in the pipeline is not a function of its
+inputs. `graph_projection_version` = `gpv:` + `digest(run_id | content_hash)`.
+
+### Staging Table
+An `UNLOGGED` mirror of a target table, used only by the bulk ingestion path. Rows are
+`COPY`d into it and then promoted with `INSERT … SELECT … ON CONFLICT DO NOTHING`, which is
+how the load stays idempotent — `COPY` cannot express a conflict clause. Dropped inside the
+same transaction; nothing ever reads one.
+
+### Dataset Pin
+`datasets/<dataset_id>.pin.json`. The committed statement of exactly which bytes a run
+consumed: source file name and publisher, byte count, `content_sha256`, row count, header,
+the codec chosen and the codecs rejected, plus the mapping and ontology identities. The data
+itself is not committed, so the pin is the only durable description of it. **It carries no
+timestamp** — a `pinned_at` field would make two runs over identical inputs differ, which is
+the determinism guarantee failing in the one artifact whose job is reproducibility.
+
+### Schema Mapping
+`ontology/packs/<domain>/mapping.yaml`, extension seam 3. Binds source columns and source
+values to ontology concepts through a **closed** transform registry. Distinct from the
+**ontology pack**, which describes the domain: the pack says what an `ORDER` is, the mapping
+says which column carries one. Versioned (`mapping_version`) and content-addressed
+(`mapping_hash`, prefix `map:`).
+
+### Mapping Proposal
+A machine-generated `mapping.yaml` carrying `status: PROPOSED_UNCONFIRMED`, produced by
+`suggest_mapping` from a column profile and a pack. **The loader refuses it.** That refusal
+is the entire human-confirmation mechanism: a human reads every binding and its stated
+`basis`, corrects what is wrong, and removes the status line in a commit. A proposal is never
+a mapping.
+
+### Data Quality Report
+`docs/reports/<dataset_id>/<dataset_version>/data-quality.{json,md}`. One model, two
+renderings, generated from the same object so they cannot disagree. Canonical JSON, so two
+imports of one file produce identical bytes and an identical `report_sha256`. Committed; the
+data it describes is not.
+
+### Headline Constraint
+A limitation that bounds what any downstream conclusion about a dataset may claim, rendered
+**first** in both report forms. Distinct from a **finding**: a finding says something is
+wrong with the data and can be fixed; a headline constraint says something is permanently
+true about what the data can support and can only be known about. Every one carries the
+measurement behind it — a constraint asserted without a number is an opinion.
+
+### Downstream Consequence
+A required, non-empty field on every validation rule and every coverage finding, naming what
+stops working. `min_length=1` on the model, so a rule cannot be registered without one. A
+finding without a consequence is an observation, and observations are what reports get
+ignored for.
+
+### Quarantine
+`datasets/clean/<dataset_version>/quarantine.jsonl`. A row withheld from the clean layer,
+written out in full with the rule codes that put it there. **Nothing is dropped silently:**
+`rows_read == rows_clean + rows_quarantined` is asserted at the end of every import, and the
+run raises rather than publishing a report whose own arithmetic disagrees with itself.
+
+### Clean Layer
+`datasets/clean/<dataset_version>/`, holding `records.jsonl`, `quarantine.jsonl` and
+`cleaning_ledger.jsonl`. A **new, versioned** layer; the raw file is opened read-only and is
+byte-identical afterwards. Cleaning never edits its own evidence, because the record a
+conclusion cites must still say what it said when the conclusion was drawn (LAW-EVIDENCE).
+
+### Cleaning Ledger
+One receipt per `(transform, column)`: the rule, the count of rows changed, a before/after
+example, the rationale, and the provenance class. The complete list of differences between
+the raw bytes and the clean layer.
+
+### Manufactured Precision
+A source column that displays more precision than it observed — typically because its value
+is arithmetic on another column. Distinct from **coarse** precision, and worse: a coarse
+column announces its limits, while a column showing `22:56` because a different column said
+`22:56` does not. Detected only where a mapping declares a `temporal_derivation_check`, which
+the adapter then measures. Risk R-20; observed in the reference dataset (DEF-0004).
+
+### Granularity
+How finely a source pins an instant down, measured rather than inferred from a format
+string. Reported per temporal column as the count of values carrying a real time component.
+A column is **date-granular** when no parsed value pins anything finer than a calendar day —
+which makes two events on one date OVERLAP, so `core.temporal.verdict` returns
+`UNDETERMINED` and no edge between them can be promoted to `INFERRED`.
 
 ---
 
@@ -365,3 +794,20 @@ defect this system can contain. `PRECEDES` lives in the Temporal Property Graph;
 
 > If a session finds itself building a model that estimates a future outcome, it has left
 > the product. Stop and re-read `CONTEXT.md` §1.
+
+### 2.7 Request Id vs Correlation Id
+
+**They are the same thing, and only one of the names is correct here.**
+
+prd.md §54 and the persistence brief speak of a *request id*. `CONVENTIONS.md` §8 and this
+glossary define that identifier as **`correlation_id`**: the identifier threading through
+one API request, present on every log record and every audit entry that request produced.
+
+`CONTEXT.md` §5 is explicit that a term used in code identifiers, API fields, or ADRs that
+is not in this glossary is a defect, and that a second definition of an existing term is
+also one. So there is no `request_id` column and no `request_id` field. The synonym is
+recorded in `docs/data-model.md` §9 so that a reader arriving from prd.md §54 finds the
+mapping instead of concluding the requirement was dropped.
+
+Distinct from `execution_id` (one pipeline execution, random, excluded from determinism
+comparisons) and from `run_id` (content-addressed, stable across reruns, included).

@@ -21,6 +21,16 @@ services at once; production sizing is a deployment concern, not a compose-file 
 Every published host port is overridable (see `.env.example`), because a developer machine
 frequently already runs a PostgreSQL or a Redis on the conventional port.
 
+**You do not have to remember any of that.** `make doctor` checks it — runtime reachable,
+memory at or above the floor, every published port free — and names the remedy for whatever
+is missing, including the exact `.env` line to add for a taken port. `make up` runs it
+first, so the diagnosis arrives instead of the exit code. The 4 GB figure above is not
+prose: `scripts/check_stack_preflight.py` holds it as `MINIMUM_MEMORY_BYTES`, and
+`tests/unit/test_stack_preflight.py` fails if this file and that constant ever disagree.
+
+Ports this project already publishes are not treated as conflicts, so `make up` stays
+idempotent against a running stack.
+
 **Forbidden:** no schema for the Neo4j projection lives here. The projection is derived and
 is built only by module 8 from PostgreSQL facts (ADR-0001); writing it from a migration
 would create a graph with no fact behind it.

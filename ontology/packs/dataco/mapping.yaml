@@ -1,0 +1,756 @@
+# The DataCo SMART Supply Chain schema mapping -- extension seam 3.
+#
+# WHAT THIS IS: the binding from source columns to ontology concepts. Together with
+# `ontology.yaml` and `backend/src/causalog/persistence/sources/dataco.py`, this is one of
+# only three places in the distribution where a DataCo column name may appear. Every other
+# file that touches this dataset is domain-free and is checked to be
+# (`scripts/check_domain_independence.py`).
+#
+# STATUS: CONFIRMED. A document carrying `status: PROPOSED_UNCONFIRMED` is REFUSED by
+# `load_mapping` -- that is what makes auto-suggestion a proposal rather than a commitment.
+# This file was bootstrapped from a generated proposal and then hand-authored against the
+# measured column profile; the proposal is kept beside the data-quality report so the
+# difference between what the machine guessed and what a human confirmed is inspectable.
+#
+# THE ONE DECISION IN THIS FILE THAT IS NOT MECHANICAL
+# ----------------------------------------------------
+# `shipping date (DateOrders)` is bound at DAY precision even though its text carries a
+# minute. That is deliberate, and it is the single most consequential line here.
+#
+# Measured over all 180,519 rows: `shipping date` equals `order date` plus
+# `Days for shipping (real)` whole days, EXACTLY TO THE MINUTE, in 170,782 rows (94.61%).
+# The remaining 9,737 rows miss by exactly +12h (5,080) or exactly -12h (4,657) and by
+# nothing else -- and 9,737 is precisely the number of `Same Day` shipments. So the shipping
+# instant is not an observation at all: it is arithmetic on the order instant under two
+# construction rules.
+#
+# Its DATE is real -- `Days for shipping (real)` equals the calendar-day difference in
+# 180,519 of 180,519 rows. Its TIME OF DAY is manufactured. Binding it at MINUTE precision
+# would let the engine order two events by minutes the source invented, which is imputation
+# entering through a format string rather than through a missing value, and invisible to
+# every check downstream of here. Widening to DAY discards precision the data never had.
+#
+# `order date (DateOrders)` IS bound at MINUTE precision: it is the one independently
+# observed instant in this dataset. Note that this CORRECTS the assumption recorded in
+# CONTEXT.md and ADR-0007 that DataCo is uniformly day-granular -- see the data-quality
+# report and DEF-0004.
+
+mapping_schema_version: "1.1.0"
+mapping_id: dataco
+mapping_version: "1.1.0"
+ontology_pack: dataco
+status: CONFIRMED
+description: >-
+  Binds the DataCo SMART Supply Chain CSV to the dataco ontology pack. Column bindings are
+  taken from the pack's own declared `source_column` origins; value bindings, identity keys,
+  temporal precision, precedence pairs and referential constraints are authored here and are
+  the mapping's own claims.
+
+# ---------------------------------------------------------------------------------------
+# Temporal bindings. `source_format` is DECLARED, never sniffed: the difference between
+# %m/%d/%Y and %d/%m/%Y is silent for eleven days of every month.
+# ---------------------------------------------------------------------------------------
+temporal_bindings:
+  - column: order date (DateOrders)
+    source_format: "%m/%d/%Y %H:%M"
+    precision: MINUTE
+    timezone_policy: ASSUME_UTC
+    source_states_offset: false
+
+  # DAY, not MINUTE. See the header. The minute this column displays is arithmetic.
+  - column: shipping date (DateOrders)
+    source_format: "%m/%d/%Y %H:%M"
+    precision: DAY
+    timezone_policy: ASSUME_UTC
+    source_states_offset: false
+
+# ---------------------------------------------------------------------------------------
+# The declared derivation this mapping asserts and the adapter MEASURES. Nothing here is
+# taken on trust: the report prints the agreement rate and the residual histogram.
+# ---------------------------------------------------------------------------------------
+temporal_derivation_checks:
+  - id: SHIP_INSTANT_IS_DERIVED
+    column: shipping date (DateOrders)
+    equals_column: order date (DateOrders)
+    plus_days_column: Days for shipping (real)
+    rationale: >-
+      The shipping instant is suspected of being computed from the order instant plus the
+      recorded shipping-day count rather than observed. If it holds, the column's sub-day
+      component carries no information and binding it above DAY precision would manufacture
+      an ordering. The check exists so that suspicion is a measurement rather than a note.
+
+# ---------------------------------------------------------------------------------------
+# Declared precedence. `allow_equal` is true because a same-date dispatch is legitimate in
+# this source and must be counted as INSEPARABLE rather than reported as an inversion.
+# ---------------------------------------------------------------------------------------
+precedence_pairs:
+  - id: PLACEMENT_BEFORE_DISPATCH
+    earlier_column: order date (DateOrders)
+    later_column: shipping date (DateOrders)
+    allow_equal: true
+    rationale: >-
+      An order cannot be dispatched before it is placed. An inversion is a corrupt row; an
+      equality is two events the data cannot separate, which is a finding about the dataset
+      and not a defect in the row.
+
+# ---------------------------------------------------------------------------------------
+# Identity. Each entity type's content-addressed identifier is minted from these columns.
+# ---------------------------------------------------------------------------------------
+#
+# `observed_at` names the instant at which a row's statement ABOUT that entity was true.
+# Every row of this file is one line of one purchase, and it describes every participant as
+# they stood when the purchase was placed -- not when the file was exported. So every entity
+# type dates its statements to `ORDER.placed_at`, which is the ONE independently observed
+# instant this dataset carries (DEF-0004). Attribute history is sequenced by it.
+identity_bindings:
+  - entity_type: ORDER
+    key_columns: [Order Id]
+    observed_at: {concept: ORDER, attribute: placed_at}
+  - entity_type: ORDER_ITEM
+    key_columns: [Order Item Id]
+    observed_at: {concept: ORDER, attribute: placed_at}
+  - entity_type: CUSTOMER
+    key_columns: [Customer Id]
+    observed_at: {concept: ORDER, attribute: placed_at}
+  - entity_type: PRODUCT
+    key_columns: [Product Card Id]
+    observed_at: {concept: ORDER, attribute: placed_at}
+  - entity_type: PRODUCT_CATEGORY
+    key_columns: [Category Id]
+    observed_at: {concept: ORDER, attribute: placed_at}
+  - entity_type: DEPARTMENT
+    key_columns: [Department Id]
+    observed_at: {concept: ORDER, attribute: placed_at}
+  - entity_type: SHIPPING_MODE
+    key_columns: [Shipping Mode]
+    observed_at: {concept: ORDER, attribute: placed_at}
+  - entity_type: MARKET_REGION
+    key_columns: [Market, Order Region]
+    observed_at: {concept: ORDER, attribute: placed_at}
+  # The pack declares `site_reference` with origin DERIVED and a basis naming exactly these
+  # two columns. Two distinct sites sharing a coordinate resolve to one entity, and the pack
+  # says so.
+  - entity_type: FULFILLMENT_SITE
+    key_columns: [Latitude, Longitude]
+    observed_at: {concept: ORDER, attribute: placed_at}
+
+# ---------------------------------------------------------------------------------------
+# Referential constraints. Each is a foreign key the adapter checks against the whole-file
+# identity index -- a forward reference is not an orphan.
+# ---------------------------------------------------------------------------------------
+referential_constraints:
+  - id: ORDER_CUSTOMER_EXISTS
+    column: Order Customer Id
+    references_entity_type: CUSTOMER
+    rationale: >-
+      The order-side customer reference must name a customer the dataset carries. The column
+      appears to duplicate `Customer Id`; the constraint is declared anyway, because a check
+      that passes is evidence and an assumption is not.
+  - id: ITEM_PRODUCT_EXISTS
+    column: Order Item Cardprod Id
+    references_entity_type: PRODUCT
+    rationale: An order line must reference a product the dataset carries.
+  - id: PRODUCT_CATEGORY_EXISTS
+    column: Product Category Id
+    references_entity_type: PRODUCT_CATEGORY
+    rationale: A product must reference a category the dataset carries.
+
+# ---------------------------------------------------------------------------------------
+# Value bindings. Exhaustive maps. An unmapped source value is an ERROR and quarantines the
+# row; it is never passed through and never defaulted (risk R-07).
+# ---------------------------------------------------------------------------------------
+value_bindings:
+  # This one drives the state-machine contradiction check: every symbol must be a declared
+  # AND REACHABLE state of ORDER's lifecycle.
+  - column: Order Status
+    describes_lifecycle_state_of: ORDER
+    unmapped_value_policy: ERROR
+    values:
+      - [COMPLETE, COMPLETE]
+      - [PENDING, PENDING]
+      - [PENDING_PAYMENT, PENDING_PAYMENT]
+      - [PROCESSING, PROCESSING]
+      - [CLOSED, CLOSED]
+      - [ON_HOLD, ON_HOLD]
+      - [SUSPECTED_FRAUD, SUSPECTED_FRAUD]
+      - [CANCELED, CANCELED]
+      - [PAYMENT_REVIEW, PAYMENT_REVIEW]
+
+  - column: Delivery Status
+    unmapped_value_policy: ERROR
+    values:
+      - ["Advance shipping", ADVANCE_SHIPPING]
+      - ["Late delivery", LATE_DELIVERY]
+      - ["Shipping canceled", SHIPPING_CANCELED]
+      - ["Shipping on time", SHIPPING_ON_TIME]
+
+  - column: Type
+    unmapped_value_policy: ERROR
+    values:
+      - [DEBIT, DEBIT]
+      - [TRANSFER, TRANSFER]
+      - [PAYMENT, PAYMENT]
+      - [CASH, CASH]
+
+  - column: Customer Segment
+    unmapped_value_policy: ERROR
+    values:
+      - [Consumer, CONSUMER]
+      - [Corporate, CORPORATE]
+      - ["Home Office", HOME_OFFICE]
+
+  - column: Shipping Mode
+    unmapped_value_policy: ERROR
+    values:
+      - ["Standard Class", STANDARD_CLASS]
+      - ["First Class", FIRST_CLASS]
+      - ["Second Class", SECOND_CLASS]
+      - ["Same Day", SAME_DAY]
+
+# ---------------------------------------------------------------------------------------
+# Column bindings.
+#
+# `required: true` means a blank or unparseable value QUARANTINES the row. It is set for
+# identity keys, temporal columns, and every attribute an event type declares as required --
+# the places where a hole could only be filled by inventing an observation. Descriptive
+# attributes are `required: false`: their absence is recorded and the row survives.
+# ---------------------------------------------------------------------------------------
+column_bindings:
+
+  # --- ORDER -----------------------------------------------------------------------------
+  - {column: Order Id, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: order_reference, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Order Status, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: order_status, transforms: [TRIM_WHITESPACE, UPPERCASE], required: true}
+  - {column: Type, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: payment_type, transforms: [TRIM_WHITESPACE, UPPERCASE], required: true}
+  - {column: order date (DateOrders), target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: placed_at, transforms: [TRIM_WHITESPACE], required: true}
+  - {column: shipping date (DateOrders), target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: dispatched_at, transforms: [TRIM_WHITESPACE], required: true}
+  - {column: Days for shipment (scheduled), target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: scheduled_shipping_days, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Days for shipping (real), target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: actual_shipping_days, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Delivery Status, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: delivery_status, transforms: [TRIM_WHITESPACE], required: true}
+  - {column: Late_delivery_risk, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: late_delivery_risk, transforms: [TRIM_WHITESPACE, PARSE_BOOLEAN_FLAG], required: true}
+  - {column: Order Profit Per Order, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: order_profit, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: true}
+  - {column: Benefit per order, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER, attribute: order_benefit, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: false}
+
+  # --- ORDER_ITEM ------------------------------------------------------------------------
+  - {column: Order Item Id, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER_ITEM, attribute: order_item_reference, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Order Item Quantity, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER_ITEM, attribute: item_quantity, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Order Item Product Price, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER_ITEM, attribute: item_unit_price, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: true}
+  - {column: Order Item Discount, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER_ITEM, attribute: item_discount, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: true}
+  - {column: Order Item Discount Rate, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER_ITEM, attribute: item_discount_rate, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: false}
+  - {column: Order Item Total, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER_ITEM, attribute: item_total, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: false}
+  - {column: Order Item Profit Ratio, target_kind: ENTITY_ATTRIBUTE, entity_type: ORDER_ITEM, attribute: item_profit_ratio, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: false}
+
+  # --- CUSTOMER --------------------------------------------------------------------------
+  - {column: Customer Id, target_kind: ENTITY_ATTRIBUTE, entity_type: CUSTOMER, attribute: customer_reference, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Customer Segment, target_kind: ENTITY_ATTRIBUTE, entity_type: CUSTOMER, attribute: customer_segment, transforms: [TRIM_WHITESPACE], required: true}
+  - {column: Customer City, target_kind: ENTITY_ATTRIBUTE, entity_type: CUSTOMER, attribute: customer_city, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: false}
+  - {column: Customer State, target_kind: ENTITY_ATTRIBUTE, entity_type: CUSTOMER, attribute: customer_state, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: false}
+  - {column: Customer Country, target_kind: ENTITY_ATTRIBUTE, entity_type: CUSTOMER, attribute: customer_country, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: false}
+  # 3 rows are blank. `required: false` so those rows survive with the attribute absent
+  # rather than being quarantined over a postcode.
+  - {column: Customer Zipcode, target_kind: ENTITY_ATTRIBUTE, entity_type: CUSTOMER, attribute: customer_zipcode, transforms: [TRIM_WHITESPACE], required: false}
+
+  # --- PRODUCT / CATEGORY / DEPARTMENT ----------------------------------------------------
+  - {column: Product Card Id, target_kind: ENTITY_ATTRIBUTE, entity_type: PRODUCT, attribute: product_reference, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Product Name, target_kind: ENTITY_ATTRIBUTE, entity_type: PRODUCT, attribute: product_name, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: false}
+  - {column: Product Price, target_kind: ENTITY_ATTRIBUTE, entity_type: PRODUCT, attribute: product_price, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: false}
+  - {column: Product Status, target_kind: ENTITY_ATTRIBUTE, entity_type: PRODUCT, attribute: product_active, transforms: [TRIM_WHITESPACE, PARSE_BOOLEAN_FLAG], required: false}
+  - {column: Category Id, target_kind: ENTITY_ATTRIBUTE, entity_type: PRODUCT_CATEGORY, attribute: category_reference, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Category Name, target_kind: ENTITY_ATTRIBUTE, entity_type: PRODUCT_CATEGORY, attribute: category_name, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: false}
+  - {column: Department Id, target_kind: ENTITY_ATTRIBUTE, entity_type: DEPARTMENT, attribute: department_reference, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Department Name, target_kind: ENTITY_ATTRIBUTE, entity_type: DEPARTMENT, attribute: department_name, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: false}
+
+  # --- SITE / REGION / SHIPPING MODE ------------------------------------------------------
+  - {column: Latitude, target_kind: ENTITY_ATTRIBUTE, entity_type: FULFILLMENT_SITE, attribute: site_latitude, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: true}
+  - {column: Longitude, target_kind: ENTITY_ATTRIBUTE, entity_type: FULFILLMENT_SITE, attribute: site_longitude, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: true}
+  - {column: Market, target_kind: ENTITY_ATTRIBUTE, entity_type: MARKET_REGION, attribute: market_name, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: true}
+  - {column: Order Region, target_kind: ENTITY_ATTRIBUTE, entity_type: MARKET_REGION, attribute: region_name, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: true}
+  - {column: Order Country, target_kind: ENTITY_ATTRIBUTE, entity_type: MARKET_REGION, attribute: destination_country, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: false}
+  - {column: Order State, target_kind: ENTITY_ATTRIBUTE, entity_type: MARKET_REGION, attribute: destination_state, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: false}
+  - {column: Order City, target_kind: ENTITY_ATTRIBUTE, entity_type: MARKET_REGION, attribute: destination_city, transforms: [TRIM_WHITESPACE, NORMALIZE_UNICODE_NFC], required: false}
+  - {column: Shipping Mode, target_kind: ENTITY_ATTRIBUTE, entity_type: SHIPPING_MODE, attribute: shipping_mode_name, transforms: [TRIM_WHITESPACE], required: true}
+
+  # --- ORDER_PLACED: the ONE observed event type in this dataset (ADR-0029) ---------------
+  - {column: order date (DateOrders), target_kind: EVENT_OCCURRED_AT, event_type: ORDER_PLACED, transforms: [TRIM_WHITESPACE], required: true}
+  - {column: order date (DateOrders), target_kind: EVENT_ATTRIBUTE, event_type: ORDER_PLACED, attribute: placed_at, transforms: [TRIM_WHITESPACE], required: true}
+  - {column: Order Id, target_kind: EVENT_ATTRIBUTE, event_type: ORDER_PLACED, attribute: order_reference, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Type, target_kind: EVENT_ATTRIBUTE, event_type: ORDER_PLACED, attribute: payment_type, transforms: [TRIM_WHITESPACE, UPPERCASE], required: true}
+  - {column: Order Profit Per Order, target_kind: EVENT_ATTRIBUTE, event_type: ORDER_PLACED, attribute: order_profit, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: true}
+
+  # --- Attributes the DERIVED event types require. Their OCCURRENCE is module 4's job; the
+  #     columns their required attributes read are bound here so the coverage check can see
+  #     them and so a measurement that reads one is not silently unavailable.
+  - {column: Order Item Quantity, target_kind: EVENT_ATTRIBUTE, event_type: INVENTORY_RESERVED, attribute: item_quantity, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Order Item Product Price, target_kind: EVENT_ATTRIBUTE, event_type: INVENTORY_RESERVED, attribute: item_unit_price, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: true}
+  - {column: Order Item Discount, target_kind: EVENT_ATTRIBUTE, event_type: INVENTORY_RESERVED, attribute: item_discount, transforms: [TRIM_WHITESPACE, PARSE_DECIMAL], required: true}
+  - {column: shipping date (DateOrders), target_kind: EVENT_ATTRIBUTE, event_type: SHIPMENT_DISPATCHED, attribute: dispatched_at, transforms: [TRIM_WHITESPACE], required: true}
+  - {column: Days for shipment (scheduled), target_kind: EVENT_ATTRIBUTE, event_type: SHIPMENT_DISPATCHED, attribute: scheduled_shipping_days, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Shipping Mode, target_kind: EVENT_ATTRIBUTE, event_type: SHIPMENT_DISPATCHED, attribute: shipping_mode_name, transforms: [TRIM_WHITESPACE], required: true}
+  - {column: Days for shipping (real), target_kind: EVENT_ATTRIBUTE, event_type: SHIPMENT_DELIVERED, attribute: actual_shipping_days, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Delivery Status, target_kind: EVENT_ATTRIBUTE, event_type: SHIPMENT_DELIVERED, attribute: delivery_status, transforms: [TRIM_WHITESPACE], required: true}
+  - {column: Days for shipping (real), target_kind: EVENT_ATTRIBUTE, event_type: SHIPMENT_DELAYED, attribute: actual_shipping_days, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+  - {column: Days for shipment (scheduled), target_kind: EVENT_ATTRIBUTE, event_type: SHIPMENT_DELAYED, attribute: scheduled_shipping_days, transforms: [TRIM_WHITESPACE, PARSE_INTEGER], required: true}
+
+# ---------------------------------------------------------------------------------------
+# Every header column not bound above. An unlisted column is a HARD ERROR: "we decided not
+# to map it" and "we did not notice it" are indistinguishable otherwise, and only one of
+# them is a decision (docs/architecture.md §5.2 step 3).
+# ---------------------------------------------------------------------------------------
+dropped_columns:
+  - column: Customer Email
+    reason: >-
+      Personal data with no causal role. Never ingested. (The published file carries the
+      literal `XXXXXXXXX` in every row, so it holds no data either way -- but the reason it
+      is dropped is the first sentence, not the second.)
+  - column: Customer Password
+    reason: >-
+      Credential material. Never ingested, never logged, and never hashed into an
+      identifier.
+  - column: Customer Fname
+    reason: Personal data. Identity is minted from `Customer Id`, which needs no name.
+  - column: Customer Lname
+    reason: Personal data. Identity is minted from `Customer Id`, which needs no name.
+  - column: Customer Street
+    reason: >-
+      Street-level address is personal data at a granularity no measurement in this pack
+      uses; city, state, country and zipcode carry the geography that does.
+  - column: Product Description
+    reason: >-
+      Free text with no declared semantics in V1. Measured as blank in all 180,519 rows, so
+      it carries nothing to interpret even if V1 had a use for it.
+  - column: Product Image
+    reason: A presentation asset; it carries no state, no time, and no causal signal.
+  - column: Sales
+    reason: >-
+      A second monetary figure alongside `Order Item Total`, with no declared distinction
+      between them in the source. Binding both would put two rival numbers for one quantity
+      into the engine; the pack declares `item_total` and this mapping supplies exactly that.
+  - column: Sales per customer
+    reason: >-
+      A pre-aggregated figure. The engine computes measurements from a declared operator
+      tree over event attributes; ingesting somebody else's aggregate would import an
+      unverifiable calculation with no basis recorded.
+  - column: Order Zipcode
+    reason: >-
+      Blank in 155,679 of 180,519 rows (86.24%). The destination geography the pack does use
+      is carried by `Order City`, `Order State`, `Order Country` and `Order Region`, which
+      are complete.
+  - column: Order Customer Id
+    reason: >-
+      Carries no attribute of its own -- it is the order-side copy of `Customer Id`. It is
+      used, as the declared foreign key `ORDER_CUSTOMER_EXISTS`, and is listed here because
+      it binds to no ontology attribute.
+  - column: Order Item Cardprod Id
+    reason: >-
+      The order-line copy of `Product Card Id`. Used as the declared foreign key
+      `ITEM_PRODUCT_EXISTS`; binds to no ontology attribute of its own.
+  - column: Product Category Id
+    reason: >-
+      The product-side copy of `Category Id`. Used as the declared foreign key
+      `PRODUCT_CATEGORY_EXISTS`; binds to no ontology attribute of its own.
+
+# ---------------------------------------------------------------------------------------
+# EVENT EMISSIONS (ADR-0039). Which records witness which occurrence.
+#
+# WHAT THIS SECTION IS. `ontology.yaml` declares, for every derived event type, a
+# `derivation.basis` in PROSE -- "Implied by an Order Status of PROCESSING, COMPLETE or
+# CLOSED". A human can audit that and no code can execute it. This section is the executable
+# half: one closed operator tree per event type, saying which records witness it.
+#
+# The two live in different files ON PURPOSE. The basis is a claim about the DOMAIN and
+# belongs to the pack; the condition is a claim about THIS DATASET'S ENCODING of it and
+# belongs here. A second dataset for the same domain reuses the pack unchanged and writes
+# its own conditions. Read each `rationale` below against the pack's basis for the same
+# event type: a divergence between the two is exactly what a reviewer is looking for, and
+# nothing mechanically compares prose to an operator tree (risk R-16).
+#
+# NOTHING HERE NAMES A PROVENANCE CLASS. An emitted event takes the class its event type
+# declares, and the pack refuses OBSERVED on a DERIVED type (ADR-0029). A heuristic
+# therefore has no path to an OBSERVED event, by construction rather than by review.
+#
+# TWO OVERLAPS AND ONE ABSENCE, RECORDED RATHER THAN TIDIED AWAY
+# --------------------------------------------------------------
+# An `Order Status` of ON_HOLD satisfies the declared basis of THREE event types --
+# PAYMENT_FAILED ("ON_HOLD reached from PENDING_PAYMENT"), ORDER_HELD ("ON_HOLD reached from
+# review") and PAYMENT_REVIEW_OPENED ("PAYMENT_REVIEW, SUSPECTED_FRAUD or ON_HOLD"). No
+# column records which state an order arrived from, so the three are NOT SEPARABLE in this
+# dataset. Each basis is transcribed faithfully and all three fire, which over-counts
+# occurrences on ON_HOLD orders. Choosing one here would be a domain judgement written into
+# a mapping file, which is the shape of error R-16 describes; the pack's own default
+# confidences (0.6, 0.7, 0.8) are where that uncertainty is already expressed.
+#
+# ORDER_RELEASED has NO RULE. Its basis is "PROCESSING, COMPLETE or CLOSED on an order whose
+# history PASSED THROUGH a hold", and this dataset carries one current status per order and
+# no history at all. The condition is not expressible over any column, so no record can
+# witness it. That is reported -- `MAP-W-EVENT-TYPE-NEVER-EMITTED` at mapping time and again
+# in the event quality report -- rather than approximated by a rule that would fire on every
+# processed order.
+#
+# TIMESTAMPS. FIVE of the nineteen emissions below can place their occurrence at all, and
+# fourteen declare UNKNOWN. That is not conservatism, it is the measurement: `order date` is
+# the one independently observed instant in this dataset (DEF-0004), `shipping date` is
+# day-granular because its minutes are manufactured (R-20), and a status column places
+# nothing in time whatsoever.
+#
+# The five that are placed, and why each is entitled to be:
+#   ORDER_PLACED        FROM_TEMPORAL_BINDING  the observed instant, unchanged
+#   SHIPMENT_DISPATCHED FROM_TEMPORAL_BINDING  the shipping date, at DAY precision
+#   SHIPMENT_DELIVERED  OFFSET_FROM            dispatch + the recorded realised day count
+#   ITEM_PICKED         BOUNDED_BETWEEN        placement..dispatch, and ONLY because the
+#   ITEM_PACKED         BOUNDED_BETWEEN        rule already requires the line to have shipped
+#
+# The fourteen that are not: bounding a status-implied occurrence between placement and
+# dispatch would assert that it fell in that window -- false for every order that was held
+# or cancelled, where the shipping date is a number the source manufactured for an event
+# that never happened, and no column distinguishes those rows. UNKNOWN is what is actually
+# known. Every bounded or offset interval carries INFERRED provenance and therefore can
+# never yield a CERTAIN verdict (ADR-0021), so none of the five can certify a causal edge
+# either.
+# ---------------------------------------------------------------------------------------
+event_emissions:
+
+  # --- The ONE observed occurrence in this dataset (ADR-0029) ----------------------------
+  - event_type: ORDER_PLACED
+    rationale: >-
+      A row exists because a purchase was placed, and `order date (DateOrders)` records the
+      moment. This is the only event type in the pack whose occurrence a column states
+      rather than implies, and the only one whose instant is read straight from a temporal
+      binding.
+    when:
+      op: IS_PRESENT
+      operands:
+        - {op: ATTRIBUTE, concept: ORDER_PLACED, attribute: placed_at}
+    occurred_at:
+      policy: FROM_TEMPORAL_BINDING
+      anchor: {concept: ORDER_PLACED, attribute: placed_at}
+      derivation: >-
+        the interval `order date (DateOrders)` denotes at its declared MINUTE precision,
+        unchanged
+
+  # --- Settlement ------------------------------------------------------------------------
+  - event_type: PAYMENT_REQUESTED
+    rationale: >-
+      Pack basis: implied by a status downstream of a settlement request. Transcribed as
+      membership of the six statuses an order can only hold if settlement was requested. No
+      column records the request and none carries its time.
+    when:
+      op: IN
+      values: [CLOSED, COMPLETE, ON_HOLD, PAYMENT_REVIEW, PENDING_PAYMENT, PROCESSING]
+      operands:
+        - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: >-
+        no column records when settlement was requested; the occurrence is implied by a
+        later status and is unplaced
+
+  - event_type: PAYMENT_APPROVED
+    rationale: >-
+      Pack basis: implied by a status of PROCESSING, COMPLETE or CLOSED. The dataset records
+      no approval, no approver and no approval time.
+    when:
+      op: IN
+      values: [CLOSED, COMPLETE, PROCESSING]
+      operands:
+        - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: no column records when settlement was approved
+
+  - event_type: PAYMENT_FAILED
+    rationale: >-
+      Pack basis: ON_HOLD reached from PENDING_PAYMENT. The "reached from" half is NOT
+      expressible -- no column records a prior state -- so the condition is ON_HOLD alone,
+      which is weaker than the basis and overlaps ORDER_HELD and PAYMENT_REVIEW_OPENED. See
+      the section header.
+    when:
+      op: EQUALS
+      operands:
+        - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+        - {op: CONSTANT, value: ON_HOLD}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: the dataset distinguishes no failure reason and records no failure time
+
+  - event_type: PAYMENT_REVIEW_OPENED
+    rationale: >-
+      Pack basis: implied by a status of PAYMENT_REVIEW, SUSPECTED_FRAUD or ON_HOLD.
+      Transcribed exactly. No column records who opened the review or when.
+    when:
+      op: IN
+      values: [ON_HOLD, PAYMENT_REVIEW, SUSPECTED_FRAUD]
+      operands:
+        - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: no column records when a review was opened
+
+  - event_type: FRAUD_SUSPECTED
+    rationale: >-
+      Pack basis: implied by a status of SUSPECTED_FRAUD. The status is the source's own
+      conclusion; this rule records that the source reached it and asserts nothing about
+      whether it is correct.
+    when:
+      op: EQUALS
+      operands:
+        - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+        - {op: CONSTANT, value: SUSPECTED_FRAUD}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: no column records when the suspicion arose
+
+  - event_type: ORDER_HELD
+    rationale: >-
+      Pack basis: ON_HOLD reached from review. As with PAYMENT_FAILED, the "reached from"
+      half is not expressible over any column, so the condition is ON_HOLD alone and the two
+      rules are indistinguishable. Both are transcribed; neither is suppressed.
+    when:
+      op: EQUALS
+      operands:
+        - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+        - {op: CONSTANT, value: ON_HOLD}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: no column records when a hold was placed
+
+  - event_type: ORDER_CANCELED
+    rationale: >-
+      Pack basis: implied by an Order Status of CANCELED, or by a Delivery Status of
+      SHIPPING_CANCELED. Both halves are transcribed as a disjunction. No cancellation time
+      and no reason are recorded.
+    when:
+      op: OR
+      operands:
+        - op: EQUALS
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+            - {op: CONSTANT, value: CANCELED}
+        - op: EQUALS
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: delivery_status}
+            - {op: CONSTANT, value: SHIPPING_CANCELED}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: no column records when the cancellation happened
+
+  # --- Fulfilment ------------------------------------------------------------------------
+  - event_type: INVENTORY_RESERVED
+    rationale: >-
+      Pack basis: implied by an order line existing on an order that reached PROCESSING or
+      beyond. DataCo carries no stock table, no on-hand quantity and no reservation record;
+      the quantity and price columns describe the line, not the reservation.
+    when:
+      op: IN
+      values: [CLOSED, COMPLETE, PROCESSING]
+      operands:
+        - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: no column records when stock was committed to the line
+
+  - event_type: INVENTORY_RELEASED
+    rationale: >-
+      Pack basis: cancellation of an order whose lines had reached ALLOCATED. Expressible
+      exactly once: an order whose status reached PROCESSING or beyond AND whose shipping
+      was cancelled had committed stock and then gave it back. An order cancelled before
+      processing never reserved anything, and this condition correctly excludes it.
+    when:
+      op: AND
+      operands:
+        - op: IN
+          values: [CLOSED, COMPLETE, PROCESSING]
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+        - op: EQUALS
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: delivery_status}
+            - {op: CONSTANT, value: SHIPPING_CANCELED}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: no release record exists in the dataset
+
+  - event_type: INVENTORY_SHORTFALL_DETECTED
+    rationale: >-
+      Pack basis, and the pack calls it the weakest derivation it contains: an order
+      reaching ON_HOLD or CANCELED with lines that never reached dispatch. DataCo carries no
+      stock level of any kind, so a shortfall is one of several explanations these same
+      columns admit. The pack's declared rule_support of 0.3 is the lowest in the pack and
+      says so.
+    when:
+      op: AND
+      operands:
+        - op: IN
+          values: [CANCELED, ON_HOLD]
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+        - op: EQUALS
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: delivery_status}
+            - {op: CONSTANT, value: SHIPPING_CANCELED}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: no column records when a shortfall was detected, or that one was
+
+  - event_type: ITEM_PICKED
+    rationale: >-
+      Pack basis: implied by the line reaching dispatch. DataCo records no picking activity,
+      no picker and no pick time; the event type exists so the process definition can express
+      a step the business performs and the dataset omits. "Reaching dispatch" is a shipping
+      status other than cancelled, which is the one thing the columns do say.
+    when:
+      op: AND
+      operands:
+        - op: NOT_EQUALS
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: delivery_status}
+            - {op: CONSTANT, value: SHIPPING_CANCELED}
+        - op: IS_PRESENT
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: dispatched_at}
+    occurred_at:
+      policy: BOUNDED_BETWEEN
+      earliest: {concept: ORDER, attribute: placed_at}
+      latest: {concept: ORDER, attribute: dispatched_at}
+      derivation: >-
+        a pick on a line that did reach dispatch necessarily happened after the purchase was
+        placed and before it left; the window is the two observed instants and the pick
+        instant itself is recorded nowhere
+
+  - event_type: ITEM_PACKED
+    rationale: >-
+      Pack basis: implied by the line reaching dispatch, on the same basis as ITEM_PICKED
+      and with the same absence of any packing record. The two rules are identical because
+      the evidence for them is identical; the pack distinguishes them and the dataset does
+      not.
+    when:
+      op: AND
+      operands:
+        - op: NOT_EQUALS
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: delivery_status}
+            - {op: CONSTANT, value: SHIPPING_CANCELED}
+        - op: IS_PRESENT
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: dispatched_at}
+    occurred_at:
+      policy: BOUNDED_BETWEEN
+      earliest: {concept: ORDER, attribute: placed_at}
+      latest: {concept: ORDER, attribute: dispatched_at}
+      derivation: >-
+        a pack on a line that did reach dispatch happened after placement and before
+        departure; the packing instant itself is recorded nowhere
+
+  # --- Transport -------------------------------------------------------------------------
+  - event_type: SHIPMENT_DISPATCHED
+    rationale: >-
+      THE CASE THE PRD NAMES. `shipping date (DateOrders)` is a real column and is not the
+      occurrence; the pack declares the occurrence DERIVED with the date as its basis, and
+      this rule witnesses it. Note that the instant comes from a binding pinned at DAY
+      precision because the column's minutes are manufactured (R-20, DEF-0004) -- so this
+      event is placed on a day and never within one.
+    when:
+      op: AND
+      operands:
+        - op: NOT_EQUALS
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: delivery_status}
+            - {op: CONSTANT, value: SHIPPING_CANCELED}
+        - op: IS_PRESENT
+          operands:
+            - {op: ATTRIBUTE, concept: SHIPMENT_DISPATCHED, attribute: dispatched_at}
+    occurred_at:
+      policy: FROM_TEMPORAL_BINDING
+      anchor: {concept: SHIPMENT_DISPATCHED, attribute: dispatched_at}
+      derivation: >-
+        the interval `shipping date (DateOrders)` denotes at its declared DAY precision,
+        unchanged; the sub-day component is manufactured and is discarded by the binding
+
+  - event_type: SHIPMENT_IN_TRANSIT
+    rationale: >-
+      Pack basis: implied by a positive Days for shipping (real) on a dispatched order.
+      DataCo contains no tracking scan of any kind, so this marks an interval rather than a
+      moment.
+    when:
+      op: AND
+      operands:
+        - op: NOT_EQUALS
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: delivery_status}
+            - {op: CONSTANT, value: SHIPPING_CANCELED}
+        - op: GREATER_THAN
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: actual_shipping_days}
+            - {op: CONSTANT, value: "0"}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: >-
+        this event type marks the interval between departure and arrival rather than either
+        endpoint, and no column places it
+
+  - event_type: SHIPMENT_DELAYED
+    rationale: >-
+      Pack basis: Days for shipping (real) exceeding Days for shipment (scheduled). BOTH
+      COLUMNS ARE REAL and the comparison between them is arithmetic -- this is the event
+      type a lifecycle walk could never produce, because it changes no state, and it is the
+      reason a condition tree exists at all. The occurrence the two columns describe is not
+      separately recorded and the dataset gives no moment at which the delay became apparent.
+    when:
+      op: GREATER_THAN
+      operands:
+        - {op: ATTRIBUTE, concept: SHIPMENT_DELAYED, attribute: actual_shipping_days}
+        - {op: ATTRIBUTE, concept: SHIPMENT_DELAYED, attribute: scheduled_shipping_days}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: >-
+        the dataset gives no moment at which the delay became apparent; only that the
+        realised duration exceeded the scheduled one
+
+  - event_type: SHIPMENT_DELIVERED
+    rationale: >-
+      Pack basis: a Delivery Status other than SHIPPING_CANCELED together with a
+      non-negative Days for shipping (real). The arrival itself is never logged, and the
+      pack declares `arrived_at` as the shipping date advanced by the realised day count --
+      which is exactly the instant policy below.
+    when:
+      op: AND
+      operands:
+        - op: NOT_EQUALS
+          operands:
+            - {op: ATTRIBUTE, concept: ORDER, attribute: delivery_status}
+            - {op: CONSTANT, value: SHIPPING_CANCELED}
+        - op: IS_PRESENT
+          operands:
+            - {op: ATTRIBUTE, concept: SHIPMENT_DELIVERED, attribute: actual_shipping_days}
+    occurred_at:
+      policy: OFFSET_FROM
+      anchor: {concept: ORDER, attribute: dispatched_at}
+      plus_days: {concept: ORDER, attribute: actual_shipping_days}
+      derivation: >-
+        the shipping date advanced by Days for shipping (real); DataCo records no arrival
+        timestamp, so this instant is arithmetic over two source columns and keeps the
+        anchor's DAY precision -- adding whole days to a day never yields an hour
+
+  # --- Closure ---------------------------------------------------------------------------
+  - event_type: ORDER_COMPLETED
+    rationale: >-
+      Pack basis: implied by an Order Status of COMPLETE or CLOSED. No completion time is
+      recorded.
+    when:
+      op: IN
+      values: [CLOSED, COMPLETE]
+      operands:
+        - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: no completion time is recorded
+
+  - event_type: ORDER_CLOSED
+    rationale: >-
+      Pack basis: implied by an Order Status of CLOSED. No closure time is recorded.
+    when:
+      op: EQUALS
+      operands:
+        - {op: ATTRIBUTE, concept: ORDER, attribute: order_status}
+        - {op: CONSTANT, value: CLOSED}
+    occurred_at:
+      policy: UNKNOWN
+      derivation: no closure time is recorded

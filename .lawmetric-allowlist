@@ -1,0 +1,12 @@
+# ADR-0026 metric-declaration allowlist (CONVENTIONS.md §6a).
+#
+# Format:  <repo-relative path>::<exact identifier>  # one-line justification
+#
+# The second field is the EXACT identifier the lint matched, lowercased -- `transit_delay`,
+# not the `delay` stem. An entry exempts one binding and must never cover a family: keying
+# on the stem would let one reviewed exception silently admit every metric named after it.
+#
+# This is a pressure valve, not a bypass. Every entry is reviewed. An entry without a
+# justification fails the lint. An empty allowlist is the healthy state -- the usual fix is
+# to move the formula into the pack as a MeasurementExpression, which is where ADR-0026
+# says it belongs.

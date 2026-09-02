@@ -1,0 +1,1400 @@
+# The DataCo SMART Supply Chain domain pack.
+#
+# This file is DATA. It is the one place in this repository where logistics vocabulary is
+# allowed to live (LAW-DOMAIN, ADR-0002). prd.md §21 prints an event vocabulary; that
+# vocabulary belongs here, as one instance, and is not part of the engine.
+#
+# TRACEABILITY. Every attribute declares an `origin`:
+#   SOURCE_COLUMN  a named DataCo column carries the value; the name must appear in
+#                  columns.manifest.yaml, which a test enforces.
+#   DERIVED        the engine computes it; `derivation_basis` names what from.
+#   ASSUMED        nothing in the dataset establishes it; `assumption` says so plainly.
+#
+# DERIVED EVENTS (ADR-0029). DataCo is one row per order line with a terminal status and a
+# handful of date and duration columns. It does not log occurrences. Exactly ONE event type
+# here is OBSERVED -- ORDER_PLACED, which the row's existence and its order date record
+# directly. Every other event type is reconstructed, is marked `observation: DERIVED`,
+# names its basis, and carries a default confidence. None of them may claim OBSERVED
+# provenance; the loader refuses it. That ratio is a finding about this dataset, not a
+# shortcoming of this pack, and hiding it would put twenty unearned OBSERVED facts into the
+# system of record.
+#
+# prd.md §21 EVENT TYPES THIS DATASET CANNOT SUPPORT, and why they are absent rather than
+# invented (see README.md):
+#   Order Updated       no revision history; the row carries one terminal status.
+#   Customer Complaint  no complaint, contact, or service column of any kind.
+#   Route Changed       no route, leg, waypoint, or carrier-movement column.
+# Declaring them with ASSUMED attributes would manufacture occurrences the source never
+# recorded, which is the failure LAW-PROVENANCE exists to prevent.
+
+pack_schema_version: "1.0.0"
+pack_id: dataco
+ontology_version: "1.0.0"
+extends: _base
+description: >-
+  The DataCo SMART Supply Chain reference domain: the order-to-delivery process, its
+  entities and relationship web (prd.md §22), and the event vocabulary of prd.md §21
+  restricted to what the dataset can actually support.
+
+# ---------------------------------------------------------------------------
+# Event categories -- prd.md §21's four groupings, declared as data. The engine
+# groups by whatever a pack declares and knows none of these names.
+# ---------------------------------------------------------------------------
+event_categories:
+  - id: BUSINESS
+    description: An occurrence in the commercial lifecycle of a sales order.
+  - id: WAREHOUSE
+    description: An occurrence in the physical handling of stock against an order line.
+  - id: TRANSPORT
+    description: An occurrence in the movement of goods from origin to destination.
+  - id: EXTERNAL
+    description: >-
+      An occurrence originating outside the operating organization. Declared so external
+      event types have a category; no internal event type uses it.
+
+# ---------------------------------------------------------------------------
+# Entity types
+# ---------------------------------------------------------------------------
+entity_types:
+
+  - id: ORDER
+    description: One sales order placed by a customer, the anchor of the canonical process.
+    identifying_keys: [order_reference]
+    attributes:
+      - name: order_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: SOURCE_COLUMN
+        source_column: Order Id
+        description: The order identifier as the source records it.
+      - name: order_status
+        type: ENUMERATION
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Order Status
+        enumeration_values:
+          - COMPLETE
+          - PENDING
+          - CLOSED
+          - PENDING_PAYMENT
+          - CANCELED
+          - PROCESSING
+          - SUSPECTED_FRAUD
+          - ON_HOLD
+          - PAYMENT_REVIEW
+        description: >-
+          The terminal status the source records. It is a snapshot, not a history: the
+          dataset never shows an order in two statuses, which is why every status-implied
+          event type in this pack is DERIVED.
+      - name: payment_type
+        type: ENUMERATION
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Type
+        enumeration_values: [DEBIT, TRANSFER, PAYMENT, CASH]
+        description: The settlement instrument used for the order.
+      - name: placed_at
+        type: INSTANT
+        semantics: INSTANT
+        origin: SOURCE_COLUMN
+        source_column: order date (DateOrders)
+        description: >-
+          When the order was placed. Day granularity in the source; the event generator
+          records it as a DAY-precision interval and never narrows it (CONVENTIONS.md §10).
+      - name: dispatched_at
+        type: INSTANT
+        semantics: INSTANT
+        origin: SOURCE_COLUMN
+        source_column: shipping date (DateOrders)
+        description: >-
+          The shipping date the source records. It is a date field, not a logged dispatch;
+          the occurrence it implies is the DERIVED event type SHIPMENT_DISPATCHED.
+      - name: scheduled_shipping_days
+        type: INTEGER
+        semantics: QUANTITY
+        unit: DAYS
+        origin: SOURCE_COLUMN
+        source_column: Days for shipment (scheduled)
+        description: The transit duration the shipping mode promises.
+      - name: actual_shipping_days
+        type: INTEGER
+        semantics: QUANTITY
+        unit: DAYS
+        origin: SOURCE_COLUMN
+        source_column: Days for shipping (real)
+        description: The transit duration actually taken.
+      - name: delivery_status
+        type: ENUMERATION
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Delivery Status
+        enumeration_values:
+          - ADVANCE_SHIPPING
+          - LATE_DELIVERY
+          - SHIPPING_CANCELED
+          - SHIPPING_ON_TIME
+        description: The source's own verdict on the outcome of the shipment.
+      - name: late_delivery_risk
+        type: BOOLEAN
+        semantics: FLAG
+        origin: SOURCE_COLUMN
+        source_column: Late_delivery_risk
+        description: >-
+          A flag the source carries per row. It is an input the dataset supplies, never a
+          prediction this engine makes, and no causal edge may be created from it alone.
+      - name: order_profit
+        type: DECIMAL
+        semantics: MONETARY
+        unit: USD
+        origin: SOURCE_COLUMN
+        source_column: Order Profit Per Order
+        description: The margin the source attributes to the order.
+      - name: order_benefit
+        type: DECIMAL
+        semantics: MONETARY
+        unit: USD
+        origin: SOURCE_COLUMN
+        source_column: Benefit per order
+        description: The benefit the source attributes to the order.
+    lifecycle:
+      # The nine states are the nine values of the Order Status column. The three transit
+      # states are DERIVED: no column carries them, and the events that produce them are
+      # themselves DERIVED. They are declared here so the state machine can express the
+      # process the business actually runs rather than only the status the file preserves.
+      states:
+        - PENDING
+        - PENDING_PAYMENT
+        - PAYMENT_REVIEW
+        - ON_HOLD
+        - SUSPECTED_FRAUD
+        - PROCESSING
+        - DISPATCHED
+        - IN_TRANSIT
+        - DELIVERED
+        - COMPLETE
+        - CLOSED
+        - CANCELED
+      initial_states: [PENDING]
+      terminal_states: [CLOSED, CANCELED]
+      transitions:
+        - {from: PENDING, to: PENDING_PAYMENT, triggered_by: PAYMENT_REQUESTED}
+        - {from: PENDING, to: PAYMENT_REVIEW, triggered_by: PAYMENT_REVIEW_OPENED}
+        - {from: PENDING_PAYMENT, to: PROCESSING, triggered_by: PAYMENT_APPROVED}
+        - {from: PENDING_PAYMENT, to: ON_HOLD, triggered_by: PAYMENT_FAILED}
+        - {from: PENDING_PAYMENT, to: CANCELED, triggered_by: ORDER_CANCELED}
+        - {from: PAYMENT_REVIEW, to: PROCESSING, triggered_by: PAYMENT_APPROVED}
+        - {from: PAYMENT_REVIEW, to: SUSPECTED_FRAUD, triggered_by: FRAUD_SUSPECTED}
+        - {from: PAYMENT_REVIEW, to: ON_HOLD, triggered_by: ORDER_HELD}
+        - {from: ON_HOLD, to: PROCESSING, triggered_by: ORDER_RELEASED}
+        - {from: ON_HOLD, to: CANCELED, triggered_by: ORDER_CANCELED}
+        - {from: SUSPECTED_FRAUD, to: PROCESSING, triggered_by: ORDER_RELEASED}
+        - {from: SUSPECTED_FRAUD, to: CANCELED, triggered_by: ORDER_CANCELED}
+        - {from: PROCESSING, to: DISPATCHED, triggered_by: SHIPMENT_DISPATCHED}
+        - {from: PROCESSING, to: CANCELED, triggered_by: ORDER_CANCELED}
+        - {from: DISPATCHED, to: IN_TRANSIT, triggered_by: SHIPMENT_IN_TRANSIT}
+        - {from: IN_TRANSIT, to: DELIVERED, triggered_by: SHIPMENT_DELIVERED}
+        - {from: DELIVERED, to: COMPLETE, triggered_by: ORDER_COMPLETED}
+        - {from: COMPLETE, to: CLOSED, triggered_by: ORDER_CLOSED}
+
+  - id: ORDER_ITEM
+    description: One line of an order -- one product at one quantity and one price.
+    identifying_keys: [order_item_reference]
+    attributes:
+      - name: order_item_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: SOURCE_COLUMN
+        source_column: Order Item Id
+        description: The line identifier as the source records it.
+      - name: item_quantity
+        type: INTEGER
+        semantics: QUANTITY
+        unit: UNITS
+        origin: SOURCE_COLUMN
+        source_column: Order Item Quantity
+        description: The number of units on the line.
+      - name: item_unit_price
+        type: DECIMAL
+        semantics: MONETARY
+        unit: USD
+        origin: SOURCE_COLUMN
+        source_column: Order Item Product Price
+        description: The unit price applied to the line.
+      - name: item_discount
+        type: DECIMAL
+        semantics: MONETARY
+        unit: USD
+        origin: SOURCE_COLUMN
+        source_column: Order Item Discount
+        description: The absolute discount applied to the line.
+      - name: item_discount_rate
+        type: DECIMAL
+        semantics: RATIO
+        origin: SOURCE_COLUMN
+        source_column: Order Item Discount Rate
+        description: The proportional discount applied to the line.
+      - name: item_total
+        type: DECIMAL
+        semantics: MONETARY
+        unit: USD
+        origin: SOURCE_COLUMN
+        source_column: Order Item Total
+        description: The line total the source records.
+      - name: item_profit_ratio
+        type: DECIMAL
+        semantics: RATIO
+        origin: SOURCE_COLUMN
+        source_column: Order Item Profit Ratio
+        description: The margin ratio the source attributes to the line.
+    lifecycle:
+      states: [REQUESTED, ALLOCATED, PICKED, PACKED, SHIPPED, FULFILLED, WITHDRAWN]
+      initial_states: [REQUESTED]
+      terminal_states: [FULFILLED, WITHDRAWN]
+      transitions:
+        - {from: REQUESTED, to: ALLOCATED, triggered_by: INVENTORY_RESERVED}
+        - {from: REQUESTED, to: WITHDRAWN, triggered_by: ORDER_CANCELED}
+        - {from: ALLOCATED, to: PICKED, triggered_by: ITEM_PICKED}
+        - {from: ALLOCATED, to: WITHDRAWN, triggered_by: INVENTORY_RELEASED}
+        - {from: PICKED, to: PACKED, triggered_by: ITEM_PACKED}
+        - {from: PACKED, to: SHIPPED, triggered_by: SHIPMENT_DISPATCHED}
+        - {from: SHIPPED, to: FULFILLED, triggered_by: SHIPMENT_DELIVERED}
+
+  - id: CUSTOMER
+    description: The party that places orders.
+    identifying_keys: [customer_reference]
+    attributes:
+      - name: customer_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: SOURCE_COLUMN
+        source_column: Customer Id
+        description: The customer identifier as the source records it.
+      - name: customer_segment
+        type: ENUMERATION
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Customer Segment
+        enumeration_values: [CONSUMER, CORPORATE, HOME_OFFICE]
+        description: The commercial segment the source assigns.
+      - name: customer_city
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Customer City
+        description: The city of the customer's recorded address.
+      - name: customer_state
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Customer State
+        description: The state or province of the customer's recorded address.
+      - name: customer_country
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Customer Country
+        description: The country of the customer's recorded address.
+      - name: customer_zipcode
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Customer Zipcode
+        description: The postal code of the customer's recorded address.
+
+  - id: PRODUCT
+    description: A sellable item.
+    identifying_keys: [product_reference]
+    attributes:
+      - name: product_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: SOURCE_COLUMN
+        source_column: Product Card Id
+        description: The product identifier as the source records it.
+      - name: product_name
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Product Name
+        description: The product's display name.
+      - name: product_price
+        type: DECIMAL
+        semantics: MONETARY
+        unit: USD
+        origin: SOURCE_COLUMN
+        source_column: Product Price
+        description: The list price the source records.
+      - name: product_active
+        type: BOOLEAN
+        semantics: FLAG
+        origin: SOURCE_COLUMN
+        source_column: Product Status
+        description: >-
+          Whether the source marks the product as active. A flag with no history: the
+          dataset never shows the value changing, so no lifecycle is declared for PRODUCT.
+
+  - id: PRODUCT_CATEGORY
+    description: The classification a product belongs to.
+    identifying_keys: [category_reference]
+    attributes:
+      - name: category_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: SOURCE_COLUMN
+        source_column: Category Id
+        description: The category identifier as the source records it.
+      - name: category_name
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Category Name
+        description: The category's display name.
+
+  - id: DEPARTMENT
+    description: The organizational unit a category is sold under.
+    identifying_keys: [department_reference]
+    attributes:
+      - name: department_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: SOURCE_COLUMN
+        source_column: Department Id
+        description: The department identifier as the source records it.
+      - name: department_name
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Department Name
+        description: The department's display name.
+
+  - id: FULFILLMENT_SITE
+    description: >-
+      The physical origin an order ships from. DataCo carries no site identifier -- only a
+      latitude and longitude per row -- so the site's identity is DERIVED from those two
+      columns rather than read from one.
+    identifying_keys: [site_reference]
+    attributes:
+      - name: site_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: DERIVED
+        derivation_basis: >-
+          Composed from the Latitude and Longitude columns, which DataCo records as the
+          origin location of the order. The dataset carries no site name, code, or capacity,
+          so two distinct sites at one coordinate would resolve to one entity.
+        description: A coordinate-addressed identity for the fulfilling site.
+      - name: site_latitude
+        type: DECIMAL
+        semantics: GEOSPATIAL
+        origin: SOURCE_COLUMN
+        source_column: Latitude
+        description: The latitude the source records for the order origin.
+      - name: site_longitude
+        type: DECIMAL
+        semantics: GEOSPATIAL
+        origin: SOURCE_COLUMN
+        source_column: Longitude
+        description: The longitude the source records for the order origin.
+
+  - id: SHIPPING_MODE
+    description: >-
+      The carriage service an order ships under. This is the only carrier-side entity the
+      dataset supports: DataCo names a service level and never names a carrier, so no
+      CARRIER entity type is declared rather than one being assumed into existence.
+    identifying_keys: [shipping_mode_name]
+    attributes:
+      - name: shipping_mode_name
+        type: ENUMERATION
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Shipping Mode
+        enumeration_values: [STANDARD_CLASS, FIRST_CLASS, SECOND_CLASS, SAME_DAY]
+        description: The service level the source records.
+
+  - id: MARKET_REGION
+    description: The destination geography an order is bound for.
+    identifying_keys: [market_name, region_name]
+    attributes:
+      - name: market_name
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Market
+        description: The market the source assigns to the order.
+      - name: region_name
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Order Region
+        description: The region within the market.
+      - name: destination_country
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Order Country
+        description: The destination country the source records.
+      - name: destination_state
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Order State
+        description: The destination state or province the source records.
+      - name: destination_city
+        type: STRING
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Order City
+        description: The destination city the source records.
+
+# ---------------------------------------------------------------------------
+# Relationship types -- the structural web of prd.md §22. Structural only:
+# `CAUSES` is refused here by the loader, because a causal edge is an artifact
+# the causal engine produces and never something a pack declares.
+# ---------------------------------------------------------------------------
+relationship_types:
+  - id: PLACES
+    description: A customer places an order.
+    from: CUSTOMER
+    to: ORDER
+    cardinality: ONE_TO_MANY
+    temporal_validity: STATIC
+  - id: CONTAINS
+    description: An order contains order lines.
+    from: ORDER
+    to: ORDER_ITEM
+    cardinality: ONE_TO_MANY
+    temporal_validity: STATIC
+  - id: REFERS_TO
+    description: An order line refers to the product being sold.
+    from: ORDER_ITEM
+    to: PRODUCT
+    cardinality: MANY_TO_ONE
+    temporal_validity: STATIC
+  - id: CLASSIFIED_AS
+    description: A product is classified under a category.
+    from: PRODUCT
+    to: PRODUCT_CATEGORY
+    cardinality: MANY_TO_ONE
+    temporal_validity: STATIC
+  - id: BELONGS_TO
+    description: A category is sold under a department.
+    from: PRODUCT_CATEGORY
+    to: DEPARTMENT
+    cardinality: MANY_TO_ONE
+    temporal_validity: STATIC
+  - id: FULFILLED_FROM
+    description: An order ships from a fulfillment site.
+    from: ORDER
+    to: FULFILLMENT_SITE
+    cardinality: MANY_TO_ONE
+    temporal_validity: TIME_VARYING
+  - id: SHIPS_VIA
+    description: An order ships under a shipping mode.
+    from: ORDER
+    to: SHIPPING_MODE
+    cardinality: MANY_TO_ONE
+    temporal_validity: TIME_VARYING
+  - id: DESTINED_FOR
+    description: An order is bound for a market region.
+    from: ORDER
+    to: MARKET_REGION
+    cardinality: MANY_TO_ONE
+    temporal_validity: STATIC
+
+# ---------------------------------------------------------------------------
+# Event types -- prd.md §21, restricted to what DataCo supports.
+# Exactly one is OBSERVED. See the header of this file.
+# ---------------------------------------------------------------------------
+event_types:
+
+  - id: ORDER_PLACED
+    description: The customer places the order. The one occurrence this dataset records directly.
+    category: BUSINESS
+    observation: OBSERVED
+    provenance_class: OBSERVED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: BUYER, entity_type: CUSTOMER, required: false}
+      - {role: DESTINATION, entity_type: MARKET_REGION, required: false}
+    required_attributes:
+      - name: placed_at
+        type: INSTANT
+        semantics: INSTANT
+        origin: SOURCE_COLUMN
+        source_column: order date (DateOrders)
+        description: When the order was placed, at the day granularity the source carries.
+      - name: order_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: SOURCE_COLUMN
+        source_column: Order Id
+        description: The order this occurrence belongs to.
+      - name: payment_type
+        type: ENUMERATION
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Type
+        enumeration_values: [DEBIT, TRANSFER, PAYMENT, CASH]
+        description: The settlement instrument recorded on the order.
+      - name: order_profit
+        type: DECIMAL
+        semantics: MONETARY
+        unit: USD
+        origin: SOURCE_COLUMN
+        source_column: Order Profit Per Order
+        description: The margin the source attributes to the order.
+    postconditions:
+      - {role: SUBJECT, state: PENDING}
+    actionability:
+      actionable: false
+      severity_class: INFORMATIONAL
+
+  - id: PAYMENT_REQUESTED
+    description: Settlement is requested against the order.
+    category: BUSINESS
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: BUYER, entity_type: CUSTOMER, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [PENDING]}
+    postconditions:
+      - {role: SUBJECT, state: PENDING_PAYMENT}
+    derivation:
+      basis: >-
+        Implied by an Order Status of PENDING_PAYMENT, PAYMENT_REVIEW, ON_HOLD, PROCESSING,
+        COMPLETE or CLOSED, all of which are downstream of a settlement request. No column
+        records the request itself and no column carries its timestamp.
+      source_columns: [Order Status, order date (DateOrders)]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.9}
+          - {component_name: temporal_support, value: 0.4}
+    actionability:
+      actionable: false
+      severity_class: INFORMATIONAL
+
+  - id: PAYMENT_APPROVED
+    description: Settlement succeeds and the order is released for fulfillment.
+    category: BUSINESS
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: BUYER, entity_type: CUSTOMER, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [PENDING_PAYMENT, PAYMENT_REVIEW]}
+    postconditions:
+      - {role: SUBJECT, state: PROCESSING}
+    derivation:
+      basis: >-
+        Implied by an Order Status of PROCESSING, COMPLETE or CLOSED. The dataset records
+        no approval event, no approver, and no approval time.
+      source_columns: [Order Status]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.85}
+          - {component_name: temporal_support, value: 0.35}
+    actionability:
+      actionable: true
+      cost_class: LOW
+      severity_class: MODERATE
+
+  - id: PAYMENT_FAILED
+    description: Settlement does not succeed and the order stops.
+    category: BUSINESS
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: BUYER, entity_type: CUSTOMER, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [PENDING_PAYMENT]}
+    postconditions:
+      - {role: SUBJECT, state: ON_HOLD}
+    derivation:
+      basis: >-
+        Implied by an Order Status of ON_HOLD reached from PENDING_PAYMENT. The dataset
+        distinguishes no failure reason and records no failure time.
+      source_columns: [Order Status, Type]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.6}
+          - {component_name: temporal_support, value: 0.3}
+    actionability:
+      actionable: true
+      cost_class: LOW
+      severity_class: MAJOR
+
+  - id: PAYMENT_REVIEW_OPENED
+    description: The order is routed to manual settlement review.
+    category: BUSINESS
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: BUYER, entity_type: CUSTOMER, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [PENDING]}
+    postconditions:
+      - {role: SUBJECT, state: PAYMENT_REVIEW}
+    derivation:
+      basis: >-
+        Implied by an Order Status of PAYMENT_REVIEW, SUSPECTED_FRAUD or ON_HOLD. No column
+        records who opened the review or when.
+      source_columns: [Order Status]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.8}
+          - {component_name: temporal_support, value: 0.3}
+    actionability:
+      actionable: true
+      cost_class: MODERATE
+      severity_class: MODERATE
+
+  - id: FRAUD_SUSPECTED
+    description: Review concludes that the order is suspect.
+    category: BUSINESS
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: BUYER, entity_type: CUSTOMER, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [PAYMENT_REVIEW]}
+    postconditions:
+      - {role: SUBJECT, state: SUSPECTED_FRAUD}
+    derivation:
+      basis: >-
+        Implied by an Order Status of SUSPECTED_FRAUD. The status is the source's own
+        conclusion; this pack records it as such and asserts nothing about whether it is
+        correct.
+      source_columns: [Order Status]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.9}
+          - {component_name: temporal_support, value: 0.3}
+    actionability:
+      actionable: true
+      cost_class: MODERATE
+      severity_class: MAJOR
+
+  - id: ORDER_HELD
+    description: The order is held pending a decision.
+    category: BUSINESS
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+    preconditions:
+      - {role: SUBJECT, state_in: [PAYMENT_REVIEW]}
+    postconditions:
+      - {role: SUBJECT, state: ON_HOLD}
+    derivation:
+      basis: Implied by an Order Status of ON_HOLD reached from review.
+      source_columns: [Order Status]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.7}
+          - {component_name: temporal_support, value: 0.3}
+    actionability:
+      actionable: true
+      cost_class: LOW
+      severity_class: MODERATE
+
+  - id: ORDER_RELEASED
+    description: A held or suspect order is released for fulfillment.
+    category: BUSINESS
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+    preconditions:
+      - {role: SUBJECT, state_in: [ON_HOLD, SUSPECTED_FRAUD]}
+    postconditions:
+      - {role: SUBJECT, state: PROCESSING}
+    derivation:
+      basis: >-
+        Implied by an Order Status of PROCESSING, COMPLETE or CLOSED on an order whose
+        history passed through a hold. Not separable from PAYMENT_APPROVED by any column;
+        the two are distinguished by the state the order was in, not by the data.
+      source_columns: [Order Status]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.55}
+          - {component_name: temporal_support, value: 0.3}
+    actionability:
+      actionable: true
+      cost_class: MODERATE
+      severity_class: MODERATE
+
+  - id: ORDER_CANCELED
+    description: The order is terminated without fulfillment.
+    category: BUSINESS
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: LINE, entity_type: ORDER_ITEM, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [PENDING_PAYMENT, ON_HOLD, SUSPECTED_FRAUD, PROCESSING]}
+    postconditions:
+      - {role: SUBJECT, state: CANCELED}
+      - {role: LINE, state: WITHDRAWN}
+    derivation:
+      basis: >-
+        Implied by an Order Status of CANCELED, or by a Delivery Status of
+        SHIPPING_CANCELED. No cancellation time and no reason are recorded.
+      source_columns: [Order Status, Delivery Status]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.9}
+          - {component_name: temporal_support, value: 0.3}
+    actionability:
+      actionable: true
+      cost_class: LOW
+      severity_class: CRITICAL
+
+  - id: INVENTORY_RESERVED
+    description: Stock is committed against an order line.
+    category: WAREHOUSE
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER_ITEM}
+      - {role: PARENT, entity_type: ORDER, required: false}
+      - {role: SITE, entity_type: FULFILLMENT_SITE, required: false}
+    required_attributes:
+      - name: item_quantity
+        type: INTEGER
+        semantics: QUANTITY
+        unit: UNITS
+        origin: SOURCE_COLUMN
+        source_column: Order Item Quantity
+        description: The units committed on the line.
+      - name: item_unit_price
+        type: DECIMAL
+        semantics: MONETARY
+        unit: USD
+        origin: SOURCE_COLUMN
+        source_column: Order Item Product Price
+        description: The unit price applied to the line.
+      - name: item_discount
+        type: DECIMAL
+        semantics: MONETARY
+        unit: USD
+        origin: SOURCE_COLUMN
+        source_column: Order Item Discount
+        description: The absolute discount applied to the line.
+    preconditions:
+      - {role: SUBJECT, state_in: [REQUESTED]}
+    postconditions:
+      - {role: SUBJECT, state: ALLOCATED}
+    derivation:
+      basis: >-
+        Implied by an order line existing on an order that reached PROCESSING or beyond.
+        DataCo carries no stock table, no on-hand quantity, and no reservation record; the
+        quantity and price columns describe the line, not the reservation.
+      source_columns: [Order Item Id, Order Item Quantity, Order Status]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.7}
+          - {component_name: temporal_support, value: 0.25}
+    actionability:
+      actionable: true
+      cost_class: MODERATE
+      severity_class: MODERATE
+
+  - id: INVENTORY_RELEASED
+    description: Committed stock is returned to availability.
+    category: WAREHOUSE
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER_ITEM}
+      - {role: PARENT, entity_type: ORDER, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [ALLOCATED]}
+    postconditions:
+      - {role: SUBJECT, state: WITHDRAWN}
+    derivation:
+      basis: >-
+        Implied by cancellation of an order whose lines had reached ALLOCATED. No release
+        record exists in the dataset.
+      source_columns: [Order Status, Delivery Status]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.6}
+          - {component_name: temporal_support, value: 0.25}
+    actionability:
+      actionable: true
+      cost_class: LOW
+      severity_class: MINOR
+
+  - id: INVENTORY_SHORTFALL_DETECTED
+    description: An order line cannot be committed against available stock.
+    category: WAREHOUSE
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER_ITEM}
+      - {role: PARENT, entity_type: ORDER, required: false}
+      - {role: SITE, entity_type: FULFILLMENT_SITE, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [REQUESTED]}
+    derivation:
+      basis: >-
+        Implied by an order reaching ON_HOLD or CANCELED with lines that never reached
+        dispatch. This is the weakest derivation in the pack: DataCo carries no stock level
+        of any kind, so a shortfall is one of several explanations the same columns admit,
+        and the confidence below says so.
+      source_columns: [Order Status, Delivery Status, Order Item Quantity]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.3}
+          - {component_name: temporal_support, value: 0.2}
+    actionability:
+      actionable: true
+      cost_class: HIGH
+      severity_class: MAJOR
+
+  - id: ITEM_PICKED
+    description: The line is picked from the fulfillment site.
+    category: WAREHOUSE
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER_ITEM}
+      - {role: SITE, entity_type: FULFILLMENT_SITE, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [ALLOCATED]}
+    postconditions:
+      - {role: SUBJECT, state: PICKED}
+    derivation:
+      basis: >-
+        Implied by the line reaching dispatch. DataCo records no picking activity, no
+        picker, and no pick time; this event type exists so the process definition can
+        express a step the business performs and the dataset omits.
+      source_columns: [Order Status, shipping date (DateOrders)]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.35}
+          - {component_name: temporal_support, value: 0.2}
+    actionability:
+      actionable: true
+      cost_class: MODERATE
+      severity_class: MINOR
+
+  - id: ITEM_PACKED
+    description: The line is packed for carriage.
+    category: WAREHOUSE
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER_ITEM}
+      - {role: SITE, entity_type: FULFILLMENT_SITE, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [PICKED]}
+    postconditions:
+      - {role: SUBJECT, state: PACKED}
+    derivation:
+      basis: >-
+        Implied by the line reaching dispatch, on the same basis as ITEM_PICKED and with
+        the same absence of any packing record.
+      source_columns: [Order Status, shipping date (DateOrders)]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.35}
+          - {component_name: temporal_support, value: 0.2}
+    actionability:
+      actionable: true
+      cost_class: MODERATE
+      severity_class: MINOR
+
+  - id: SHIPMENT_DISPATCHED
+    description: The consignment leaves the fulfillment site.
+    category: TRANSPORT
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: LINE, entity_type: ORDER_ITEM, required: false}
+      - {role: SERVICE, entity_type: SHIPPING_MODE, required: false}
+      - {role: ORIGIN, entity_type: FULFILLMENT_SITE, required: false}
+    required_attributes:
+      - name: dispatched_at
+        type: INSTANT
+        semantics: INSTANT
+        origin: SOURCE_COLUMN
+        source_column: shipping date (DateOrders)
+        description: >-
+          The shipping date the source records, at day granularity. It is a date field, not
+          a dispatch log.
+      - name: scheduled_shipping_days
+        type: INTEGER
+        semantics: QUANTITY
+        unit: DAYS
+        origin: SOURCE_COLUMN
+        source_column: Days for shipment (scheduled)
+        description: The transit duration the service level promises.
+      - name: shipping_mode_name
+        type: ENUMERATION
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Shipping Mode
+        enumeration_values: [STANDARD_CLASS, FIRST_CLASS, SECOND_CLASS, SAME_DAY]
+        description: The service level the consignment ships under.
+    preconditions:
+      - {role: SUBJECT, state_in: [PROCESSING]}
+      - {role: LINE, state_in: [PACKED]}
+    postconditions:
+      - {role: SUBJECT, state: DISPATCHED}
+      - {role: LINE, state: SHIPPED}
+    derivation:
+      basis: >-
+        THE CASE THE PRD NAMES. DataCo carries a shipping date column and no dispatch
+        record. The date is strong evidence that a dispatch occurred and is not itself the
+        occurrence, so the occurrence is declared here as DERIVED with the date as its
+        basis. A pack that called this OBSERVED would put a fabricated fact into the system
+        of record with a real column standing behind it, which is the most convincing kind
+        of wrong.
+      source_columns: [shipping date (DateOrders), Days for shipment (scheduled), Shipping Mode]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.95}
+          - {component_name: temporal_support, value: 0.8}
+    actionability:
+      actionable: true
+      cost_class: MODERATE
+      severity_class: MAJOR
+
+  - id: SHIPMENT_IN_TRANSIT
+    description: The consignment is under way.
+    category: TRANSPORT
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: SERVICE, entity_type: SHIPPING_MODE, required: false}
+      - {role: DESTINATION, entity_type: MARKET_REGION, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [DISPATCHED]}
+    postconditions:
+      - {role: SUBJECT, state: IN_TRANSIT}
+    derivation:
+      basis: >-
+        Implied by a positive Days for shipping (real) on a dispatched order. DataCo
+        contains no tracking scan of any kind, so this event type marks an interval rather
+        than a moment and carries a low temporal support.
+      source_columns: [Days for shipping (real), shipping date (DateOrders)]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.5}
+          - {component_name: temporal_support, value: 0.25}
+    actionability:
+      actionable: false
+      severity_class: INFORMATIONAL
+
+  - id: SHIPMENT_DELAYED
+    description: The consignment exceeds its promised transit duration.
+    category: TRANSPORT
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: SERVICE, entity_type: SHIPPING_MODE, required: false}
+      - {role: DESTINATION, entity_type: MARKET_REGION, required: false}
+    required_attributes:
+      - name: actual_shipping_days
+        type: INTEGER
+        semantics: QUANTITY
+        unit: DAYS
+        origin: SOURCE_COLUMN
+        source_column: Days for shipping (real)
+        description: The transit duration actually taken.
+      - name: scheduled_shipping_days
+        type: INTEGER
+        semantics: QUANTITY
+        unit: DAYS
+        origin: SOURCE_COLUMN
+        source_column: Days for shipment (scheduled)
+        description: The transit duration the service level promises.
+    preconditions:
+      - {role: SUBJECT, state_in: [IN_TRANSIT]}
+    derivation:
+      basis: >-
+        Implied by Days for shipping (real) exceeding Days for shipment (scheduled), and
+        corroborated by a Delivery Status of LATE_DELIVERY. Both columns are real; the
+        occurrence they describe is not separately recorded, and the dataset gives no
+        moment at which the delay became apparent.
+      source_columns:
+        - Days for shipping (real)
+        - Days for shipment (scheduled)
+        - Delivery Status
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.9}
+          - {component_name: temporal_support, value: 0.3}
+    actionability:
+      actionable: true
+      cost_class: HIGH
+      severity_class: MAJOR
+
+  - id: SHIPMENT_DELIVERED
+    description: The consignment reaches its destination.
+    category: TRANSPORT
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+      - {role: LINE, entity_type: ORDER_ITEM, required: false}
+      - {role: DESTINATION, entity_type: MARKET_REGION, required: false}
+    required_attributes:
+      - name: actual_shipping_days
+        type: INTEGER
+        semantics: QUANTITY
+        unit: DAYS
+        origin: SOURCE_COLUMN
+        source_column: Days for shipping (real)
+        description: The transit duration actually taken.
+      - name: delivery_status
+        type: ENUMERATION
+        semantics: CATEGORICAL
+        origin: SOURCE_COLUMN
+        source_column: Delivery Status
+        enumeration_values:
+          - ADVANCE_SHIPPING
+          - LATE_DELIVERY
+          - SHIPPING_CANCELED
+          - SHIPPING_ON_TIME
+        description: The source's own verdict on the outcome.
+      - name: arrived_at
+        type: INSTANT
+        semantics: INSTANT
+        origin: DERIVED
+        derivation_basis: >-
+          The shipping date advanced by Days for shipping (real). DataCo records no arrival
+          timestamp, so this instant is arithmetic over two source columns and is stamped
+          with INFERRED timestamp provenance (ADR-0021), never EXACT precision.
+        description: When the consignment is taken to have arrived.
+    preconditions:
+      - {role: SUBJECT, state_in: [IN_TRANSIT]}
+      - {role: LINE, state_in: [SHIPPED]}
+    postconditions:
+      - {role: SUBJECT, state: DELIVERED}
+      - {role: LINE, state: FULFILLED}
+    derivation:
+      basis: >-
+        Implied by a Delivery Status other than SHIPPING_CANCELED together with a
+        non-negative Days for shipping (real). The arrival itself is never logged.
+      source_columns: [Delivery Status, Days for shipping (real), shipping date (DateOrders)]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.9}
+          - {component_name: temporal_support, value: 0.5}
+    actionability:
+      actionable: false
+      severity_class: INFORMATIONAL
+
+  - id: ORDER_COMPLETED
+    description: The order is recorded as fulfilled.
+    category: BUSINESS
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+    preconditions:
+      - {role: SUBJECT, state_in: [DELIVERED]}
+    postconditions:
+      - {role: SUBJECT, state: COMPLETE}
+    derivation:
+      basis: Implied by an Order Status of COMPLETE or CLOSED. No completion time is recorded.
+      source_columns: [Order Status]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.9}
+          - {component_name: temporal_support, value: 0.3}
+    actionability:
+      actionable: false
+      severity_class: INFORMATIONAL
+
+  - id: ORDER_CLOSED
+    description: The order is closed and no further activity is expected.
+    category: BUSINESS
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: ORDER}
+    preconditions:
+      - {role: SUBJECT, state_in: [COMPLETE]}
+    postconditions:
+      - {role: SUBJECT, state: CLOSED}
+    derivation:
+      basis: Implied by an Order Status of CLOSED. No closure time is recorded.
+      source_columns: [Order Status]
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.9}
+          - {component_name: temporal_support, value: 0.3}
+    actionability:
+      actionable: false
+      severity_class: INFORMATIONAL
+
+# ---------------------------------------------------------------------------
+# External event types -- prd.md §21's fourth group.
+#
+# DECLARED AND UNPOPULATED IN V1. They exist here so the schema does not have to change
+# when an external feed arrives, and the loader refuses any process definition or
+# measurement that references one. Declaring a V1 feature by accident is the failure this
+# guards (CONTEXT.md §10).
+# ---------------------------------------------------------------------------
+external_event_types:
+  - id: HOLIDAY
+    description: A non-working day at origin, destination, or in transit.
+    category: EXTERNAL
+    status: DECLARED_UNPOPULATED
+    note: Requires a calendar feed keyed by country. No V1 source.
+  - id: WEATHER_EVENT
+    description: A weather condition affecting handling or carriage.
+    category: EXTERNAL
+    status: DECLARED_UNPOPULATED
+    note: Requires a historical weather feed keyed by coordinate and date. No V1 source.
+  - id: TRAFFIC_DISRUPTION
+    description: A road or network condition affecting transit duration.
+    category: EXTERNAL
+    status: DECLARED_UNPOPULATED
+    note: Requires a traffic feed keyed by route. DataCo carries no route. No V1 source.
+  - id: PORT_CONGESTION
+    description: Congestion at a port of entry or exit.
+    category: EXTERNAL
+    status: DECLARED_UNPOPULATED
+    note: Requires a port throughput feed. No V1 source.
+  - id: FUEL_PRICE_SPIKE
+    description: A movement in fuel cost affecting carriage economics.
+    category: EXTERNAL
+    status: DECLARED_UNPOPULATED
+    note: Requires a commodity price series. No V1 source.
+  - id: GOVERNMENT_RESTRICTION
+    description: A regulatory restriction on movement or trade.
+    category: EXTERNAL
+    status: DECLARED_UNPOPULATED
+    note: Requires a policy feed keyed by jurisdiction and date. No V1 source.
+
+# ---------------------------------------------------------------------------
+# Process definitions -- what the timeline builder groups against and the rule
+# engine reasons against. An expectation, never a constraint: a run that departs
+# from the canonical sequence produces a finding, not a rejected record.
+# ---------------------------------------------------------------------------
+process_definitions:
+  - id: ORDER_TO_DELIVERY
+    description: >-
+      The canonical order-to-delivery flow. The happy path is the canonical sequence; every
+      departure the dataset can express is a declared variant, so a departure is recognized
+      rather than treated as a gap.
+    anchor_entity_type: ORDER
+    canonical_sequence:
+      - ORDER_PLACED
+      - PAYMENT_REQUESTED
+      - PAYMENT_APPROVED
+      - INVENTORY_RESERVED
+      - ITEM_PICKED
+      - ITEM_PACKED
+      - SHIPMENT_DISPATCHED
+      - SHIPMENT_IN_TRANSIT
+      - SHIPMENT_DELIVERED
+      - ORDER_COMPLETED
+      - ORDER_CLOSED
+    optional_steps: [SHIPMENT_IN_TRANSIT, ORDER_CLOSED]
+    repeatable_steps: [INVENTORY_RESERVED, ITEM_PICKED, ITEM_PACKED]
+    variants:
+      - id: PAYMENT_REVIEW_PATH
+        description: Settlement is reviewed manually before the order is released.
+        sequence:
+          - ORDER_PLACED
+          - PAYMENT_REQUESTED
+          - PAYMENT_REVIEW_OPENED
+          - PAYMENT_APPROVED
+          - INVENTORY_RESERVED
+          - ITEM_PICKED
+          - ITEM_PACKED
+          - SHIPMENT_DISPATCHED
+          - SHIPMENT_IN_TRANSIT
+          - SHIPMENT_DELIVERED
+          - ORDER_COMPLETED
+          - ORDER_CLOSED
+      - id: HELD_THEN_RELEASED
+        description: The order is held during review and later released.
+        sequence:
+          - ORDER_PLACED
+          - PAYMENT_REQUESTED
+          - PAYMENT_REVIEW_OPENED
+          - ORDER_HELD
+          - ORDER_RELEASED
+          - INVENTORY_RESERVED
+          - ITEM_PICKED
+          - ITEM_PACKED
+          - SHIPMENT_DISPATCHED
+          - SHIPMENT_IN_TRANSIT
+          - SHIPMENT_DELIVERED
+          - ORDER_COMPLETED
+          - ORDER_CLOSED
+      - id: LATE_DELIVERY
+        description: >-
+          The consignment exceeds its promised transit duration and still arrives. The
+          single most common departure in this dataset.
+        sequence:
+          - ORDER_PLACED
+          - PAYMENT_REQUESTED
+          - PAYMENT_APPROVED
+          - INVENTORY_RESERVED
+          - ITEM_PICKED
+          - ITEM_PACKED
+          - SHIPMENT_DISPATCHED
+          - SHIPMENT_IN_TRANSIT
+          - SHIPMENT_DELAYED
+          - SHIPMENT_DELIVERED
+          - ORDER_COMPLETED
+          - ORDER_CLOSED
+      - id: CANCELED_BEFORE_DISPATCH
+        description: The order is terminated before anything leaves the site.
+        sequence:
+          - ORDER_PLACED
+          - PAYMENT_REQUESTED
+          - ORDER_CANCELED
+      - id: SETTLEMENT_FAILED
+        description: Settlement does not succeed and the order is held, then terminated.
+        sequence:
+          - ORDER_PLACED
+          - PAYMENT_REQUESTED
+          - PAYMENT_FAILED
+          - ORDER_CANCELED
+      - id: SUSPECTED_FRAUD_PATH
+        description: Review concludes the order is suspect and it is terminated.
+        sequence:
+          - ORDER_PLACED
+          - PAYMENT_REQUESTED
+          - PAYMENT_REVIEW_OPENED
+          - FRAUD_SUSPECTED
+          - ORDER_CANCELED
+      - id: STOCK_SHORTFALL
+        description: A line cannot be committed and the order is unwound.
+        sequence:
+          - ORDER_PLACED
+          - PAYMENT_REQUESTED
+          - PAYMENT_APPROVED
+          - INVENTORY_SHORTFALL_DETECTED
+          - INVENTORY_RELEASED
+          - ORDER_CANCELED
+
+# ---------------------------------------------------------------------------
+# Measurement definitions -- how every domain metric is computed. Operator trees,
+# not expression strings: a tree can be inspected, diffed and hashed without being
+# executed. No metric formula is hardcoded in the engine (LAW-DOMAIN, ADR-0026).
+# ---------------------------------------------------------------------------
+measurement_definitions:
+
+  - id: SHIPPING_DAYS_VARIANCE
+    description: >-
+      Days taken beyond the days promised. Positive is late, negative is early. This is the
+      pack's primary delay metric and the quantity root-cause ranking reasons about.
+    kind: DELAY
+    unit: DAYS
+    provenance_class: INFERRED
+    expression:
+      op: DIFFERENCE
+      operands:
+        - {op: ATTRIBUTE, event_type: SHIPMENT_DELIVERED, attribute: actual_shipping_days}
+        - {op: ATTRIBUTE, event_type: SHIPMENT_DISPATCHED, attribute: scheduled_shipping_days}
+
+  - id: SCHEDULE_ADHERENCE_RATIO
+    description: >-
+      Days taken as a proportion of days promised. Above 1.0 is late. Scale-free, so two
+      service levels with different promises are comparable.
+    kind: RATIO
+    unit: RATIO
+    provenance_class: INFERRED
+    expression:
+      op: RATIO
+      operands:
+        - {op: ATTRIBUTE, event_type: SHIPMENT_DELIVERED, attribute: actual_shipping_days}
+        - {op: ATTRIBUTE, event_type: SHIPMENT_DISPATCHED, attribute: scheduled_shipping_days}
+
+  - id: DISPATCH_LATENCY
+    description: >-
+      Elapsed time from the order being placed to the consignment leaving the site. Both
+      operands are day-granularity instants, so the result inherits that precision and is
+      never reported more finely than the source supports.
+    kind: DURATION
+    unit: DAYS
+    provenance_class: INFERRED
+    expression:
+      op: DURATION_BETWEEN
+      operands:
+        - {op: ATTRIBUTE, event_type: ORDER_PLACED, attribute: placed_at}
+        - {op: ATTRIBUTE, event_type: SHIPMENT_DISPATCHED, attribute: dispatched_at}
+
+  - id: LINE_NET_VALUE
+    description: Line value after discount -- quantity times unit price, less the discount.
+    kind: IMPACT
+    unit: USD
+    provenance_class: INFERRED
+    expression:
+      op: DIFFERENCE
+      operands:
+        - op: PRODUCT
+          operands:
+            - {op: ATTRIBUTE, event_type: INVENTORY_RESERVED, attribute: item_quantity}
+            - {op: ATTRIBUTE, event_type: INVENTORY_RESERVED, attribute: item_unit_price}
+        - {op: ATTRIBUTE, event_type: INVENTORY_RESERVED, attribute: item_discount}
+
+  - id: ORDER_MARGIN
+    description: >-
+      The margin the source attributes to the order. Read straight from a column rather
+      than recomputed, so that the pack reports what the dataset says rather than a second
+      opinion the dataset cannot corroborate.
+    kind: IMPACT
+    unit: USD
+    provenance_class: INFERRED
+    expression:
+      op: ATTRIBUTE
+      event_type: ORDER_PLACED
+      attribute: order_profit

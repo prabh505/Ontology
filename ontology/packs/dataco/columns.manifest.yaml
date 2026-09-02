@@ -1,0 +1,105 @@
+# The DataCo SMART Supply Chain column manifest.
+#
+# WHAT THIS IS: the authoritative list of column names the DataCo pack is permitted to
+# reference. Every attribute in `ontology.yaml` declaring `origin: SOURCE_COLUMN` must name
+# a column present here, and `tests/unit/ontology_runtime/test_dataco_pack_traceability.py`
+# fails if one does not. That is what makes "every field traces to a real column" a check
+# rather than an assertion.
+#
+# WHAT THIS NOW IS, AS OF 2026-08-30: verified against the real file. Module 1 (Data
+# Adapter) read the published distribution, pinned it by hash in `datasets/dataco.pin.json`,
+# and `scripts/import_dataset.py` compared this list against the header it actually read.
+# All 53 declared columns were present and the file declared no column this list omits. The
+# comparison is re-run on every import and a mismatch FAILS the import rather than quietly
+# rewriting this file -- a manifest edited to match whatever was on disk would delete the
+# only evidence that its claim had ever been wrong.
+#
+# Between 2026-08-28 and 2026-08-30 this field read UNVERIFIED_AGAINST_LOCAL_FILE, and that
+# was correct: the header was transcribed from the publisher rather than read. Note that
+# CONTEXT.md claimed in prose that the manifest was verified before it was -- DEF-0004,
+# recorded rather than tidied away.
+
+manifest_version: "1.0.0"
+dataset: DataCo SMART Supply Chain for Big Data Analysis
+source_file: DataCoSupplyChainDataset.csv
+verification: VERIFIED
+verified_by: dataco@994b3c8d24049cc4+mapa85a911e567f73c2
+notes: >-
+  Verified 2026-08-30 by scripts/import_dataset.py against
+  sha256:994b3c8d24049cc46bf20e8161fedece9a9b95376cc0dc929921d76cf6b9bc0d (95,729,629
+  bytes, 180,519 data rows, cp1252). `verified_by` is the dataset_version, which carries
+  both the file hash and the mapping hash. A different file or a different mapping is a
+  different dataset_version and this row would no longer describe it.
+
+columns:
+  - Type
+  - Days for shipping (real)
+  - Days for shipment (scheduled)
+  - Benefit per order
+  - Sales per customer
+  - Delivery Status
+  - Late_delivery_risk
+  - Category Id
+  - Category Name
+  - Customer City
+  - Customer Country
+  - Customer Email
+  - Customer Fname
+  - Customer Id
+  - Customer Lname
+  - Customer Password
+  - Customer Segment
+  - Customer State
+  - Customer Street
+  - Customer Zipcode
+  - Department Id
+  - Department Name
+  - Latitude
+  - Longitude
+  - Market
+  - Order City
+  - Order Country
+  - Order Customer Id
+  - order date (DateOrders)
+  - Order Id
+  - Order Item Cardprod Id
+  - Order Item Discount
+  - Order Item Discount Rate
+  - Order Item Id
+  - Order Item Product Price
+  - Order Item Profit Ratio
+  - Order Item Quantity
+  - Sales
+  - Order Item Total
+  - Order Profit Per Order
+  - Order Region
+  - Order State
+  - Order Status
+  - Order Zipcode
+  - Product Card Id
+  - Product Category Id
+  - Product Description
+  - Product Image
+  - Product Name
+  - Product Price
+  - Product Status
+  - shipping date (DateOrders)
+  - Shipping Mode
+
+# Columns present in the distribution and deliberately NOT referenced by this pack.
+# Listed so that "unreferenced" is a decision on the record rather than an oversight.
+# Column-level mapping and the mandatory `dropped_columns` justification are module 2's
+# contract (docs/architecture.md §5.2, step 3); this list is the ontology's own note.
+not_referenced:
+  - column: Customer Email
+    reason: Personal data with no causal role. Never ingested.
+  - column: Customer Password
+    reason: Credential material. Never ingested, never logged, never hashed into an identifier.
+  - column: Product Image
+    reason: A presentation asset; carries no state, no time, and no causal signal.
+  - column: Product Description
+    reason: Free text with no declared semantics in V1.
+  - column: Customer Street
+    reason: >-
+      Street-level address is personal data at a granularity no measurement in this pack
+      uses; city, state, country and zipcode carry the geography that does.

@@ -6,6 +6,15 @@
 
 Group events into per-process sequenced timelines (module 5).
 
+## What it produces
+
+`Timeline` values (process-instance, entity, and joined views) plus a
+`TimelineQualityReport` -- sequence-violation findings, gap counts (witnessable vs.
+never-witnessable), unterminated-instance counts, and a conformance score per instance
+against the pack's declared `canonical_sequence`. The report is a first-class output:
+deviation from the canonical process is signal the causal engine needs, never something
+smoothed away before it is visible.
+
 ## Forbidden dependencies
 
 `causal_engine` and above; timeline adjacency is sequence, never causation.

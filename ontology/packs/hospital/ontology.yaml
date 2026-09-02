@@ -1,0 +1,248 @@
+# Hospital patient flow -- the domain-independence pack.
+#
+# This pack exists to prove a negative: that the DSL is not secretly shaped like logistics.
+# It has no dataset behind it and is not intended to acquire one. It is loaded by
+# `tests/ontology/test_pack_is_not_domain_shaped.py` through the identical code path the
+# DataCo pack uses, with zero engine changes, and any change to the DSL that quietly
+# assumes a supply chain will break this file first.
+#
+# Because there is no dataset, every attribute is ASSUMED. That is the honest origin: an
+# ASSUMED attribute states that nothing was observed, which is exactly the situation here.
+
+pack_schema_version: "1.0.0"
+pack_id: hospital
+ontology_version: "1.0.0"
+extends: _base
+description: >-
+  Minimal inpatient flow: a patient is admitted, triaged, given a bed, treated, and
+  discharged. Deliberately unrelated to logistics, and deliberately small.
+
+event_categories:
+  - id: CLINICAL
+    description: An occurrence in the care of a patient.
+  - id: ADMINISTRATIVE
+    description: An occurrence in the administration of an episode of care.
+
+entity_types:
+  - id: PATIENT
+    description: A person receiving care.
+    identifying_keys: [patient_reference]
+    attributes:
+      - name: patient_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: ASSUMED
+        assumption: No dataset backs this pack; the reference is assumed to exist.
+        description: The pseudonymous identifier for one person under care.
+      - name: acuity
+        type: ENUMERATION
+        semantics: CATEGORICAL
+        origin: ASSUMED
+        assumption: No dataset backs this pack; the triage scale is assumed.
+        enumeration_values: [IMMEDIATE, URGENT, STANDARD, NON_URGENT]
+        description: The triage acuity assigned to the patient.
+    lifecycle:
+      states: [ARRIVED, TRIAGED, AWAITING_BED, IN_BED, UNDER_TREATMENT, DISCHARGED]
+      initial_states: [ARRIVED]
+      terminal_states: [DISCHARGED]
+      transitions:
+        - {from: ARRIVED, to: TRIAGED, triggered_by: TRIAGED}
+        - {from: TRIAGED, to: AWAITING_BED, triggered_by: ADMITTED}
+        - {from: AWAITING_BED, to: IN_BED, triggered_by: BED_ASSIGNED}
+        - {from: IN_BED, to: UNDER_TREATMENT, triggered_by: TREATED}
+        - {from: UNDER_TREATMENT, to: DISCHARGED, triggered_by: DISCHARGED}
+
+  - id: BED
+    description: A physical bed a patient may occupy.
+    identifying_keys: [bed_reference]
+    attributes:
+      - name: bed_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: ASSUMED
+        assumption: No dataset backs this pack; the reference is assumed to exist.
+        description: The identifier of one bed.
+    lifecycle:
+      states: [VACANT, OCCUPIED, OUT_OF_SERVICE]
+      initial_states: [VACANT]
+      terminal_states: []
+      transitions:
+        - {from: VACANT, to: OCCUPIED, triggered_by: BED_ASSIGNED}
+        - {from: OCCUPIED, to: VACANT, triggered_by: DISCHARGED}
+        - {from: VACANT, to: OUT_OF_SERVICE}
+        - {from: OUT_OF_SERVICE, to: VACANT}
+
+  - id: CLINICIAN
+    description: A person delivering care.
+    identifying_keys: [clinician_reference]
+    attributes:
+      - name: clinician_reference
+        type: STRING
+        semantics: IDENTIFIER
+        origin: ASSUMED
+        assumption: No dataset backs this pack; the reference is assumed to exist.
+        description: The identifier of one clinician.
+
+  - id: DEPARTMENT
+    description: An organizational unit within which care is delivered.
+    identifying_keys: [department_code]
+    attributes:
+      - name: department_code
+        type: STRING
+        semantics: IDENTIFIER
+        origin: ASSUMED
+        assumption: No dataset backs this pack; the code is assumed to exist.
+        description: The code of one department.
+
+relationship_types:
+  - id: TREATED_BY
+    description: A patient is under the care of a clinician.
+    from: PATIENT
+    to: CLINICIAN
+    cardinality: MANY_TO_MANY
+    temporal_validity: TIME_VARYING
+  - id: OCCUPIES
+    description: A patient occupies a bed.
+    from: PATIENT
+    to: BED
+    cardinality: ONE_TO_ONE
+    temporal_validity: TIME_VARYING
+  - id: SITED_IN
+    description: A bed belongs to a department.
+    from: BED
+    to: DEPARTMENT
+    cardinality: MANY_TO_ONE
+    temporal_validity: STATIC
+
+event_types:
+  - id: ADMITTED
+    description: The patient is accepted for an episode of inpatient care.
+    category: ADMINISTRATIVE
+    observation: OBSERVED
+    provenance_class: OBSERVED
+    participants:
+      - {role: SUBJECT, entity_type: PATIENT}
+      - {role: UNIT, entity_type: DEPARTMENT, required: false}
+    required_attributes:
+      - name: admitted_at
+        type: INSTANT
+        semantics: INSTANT
+        origin: ASSUMED
+        assumption: No dataset backs this pack; the timestamp is assumed to exist.
+        description: When the admission was recorded.
+    preconditions:
+      - {role: SUBJECT, state_in: [TRIAGED]}
+    postconditions:
+      - {role: SUBJECT, state: AWAITING_BED}
+    actionability:
+      actionable: false
+      severity_class: INFORMATIONAL
+
+  - id: TRIAGED
+    description: The patient is assessed and assigned an acuity.
+    category: CLINICAL
+    observation: OBSERVED
+    provenance_class: OBSERVED
+    participants:
+      - {role: SUBJECT, entity_type: PATIENT}
+      - {role: ASSESSOR, entity_type: CLINICIAN, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [ARRIVED]}
+    postconditions:
+      - {role: SUBJECT, state: TRIAGED}
+    actionability:
+      actionable: true
+      cost_class: LOW
+      severity_class: MODERATE
+
+  - id: BED_ASSIGNED
+    description: A bed is allocated to the patient.
+    category: ADMINISTRATIVE
+    observation: OBSERVED
+    provenance_class: OBSERVED
+    participants:
+      - {role: SUBJECT, entity_type: PATIENT}
+      - {role: PLACE, entity_type: BED}
+    preconditions:
+      - {role: SUBJECT, state_in: [AWAITING_BED]}
+      - {role: PLACE, state_in: [VACANT]}
+    postconditions:
+      - {role: SUBJECT, state: IN_BED}
+      - {role: PLACE, state: OCCUPIED}
+    actionability:
+      actionable: true
+      cost_class: MODERATE
+      severity_class: MAJOR
+
+  - id: TREATED
+    description: A treatment is delivered to the patient.
+    category: CLINICAL
+    observation: OBSERVED
+    provenance_class: OBSERVED
+    participants:
+      - {role: SUBJECT, entity_type: PATIENT}
+      - {role: PROVIDER, entity_type: CLINICIAN, required: false}
+    preconditions:
+      - {role: SUBJECT, state_in: [IN_BED]}
+    postconditions:
+      - {role: SUBJECT, state: UNDER_TREATMENT}
+    actionability:
+      actionable: true
+      cost_class: HIGH
+      severity_class: MAJOR
+
+  - id: DISCHARGED
+    description: The episode of care ends and the patient leaves.
+    category: ADMINISTRATIVE
+    observation: DERIVED
+    provenance_class: INFERRED
+    participants:
+      - {role: SUBJECT, entity_type: PATIENT}
+      - {role: PLACE, entity_type: BED, required: false}
+    required_attributes:
+      - name: discharged_at
+        type: INSTANT
+        semantics: INSTANT
+        origin: ASSUMED
+        assumption: No dataset backs this pack; the timestamp is assumed to exist.
+        description: When the discharge was recorded.
+    preconditions:
+      - {role: SUBJECT, state_in: [UNDER_TREATMENT]}
+      - {role: PLACE, state_in: [OCCUPIED]}
+    postconditions:
+      - {role: SUBJECT, state: DISCHARGED}
+      - {role: PLACE, state: VACANT}
+    derivation:
+      basis: >-
+        Declared DERIVED to exercise the derived-event path in a pack with no dataset. A
+        discharge here is taken to be implied by the release of the bed rather than logged
+        as its own occurrence.
+      default_confidence:
+        aggregation: weighted_mean_v1
+        provenance_class: ASSUMED
+        components:
+          - {component_name: rule_support, value: 0.8}
+          - {component_name: temporal_support, value: 0.6}
+    actionability:
+      actionable: true
+      cost_class: LOW
+      severity_class: MODERATE
+
+process_definitions:
+  - id: ADMISSION_TO_DISCHARGE
+    description: The expected sequence of an uncomplicated inpatient episode.
+    anchor_entity_type: PATIENT
+    canonical_sequence: [TRIAGED, ADMITTED, BED_ASSIGNED, TREATED, DISCHARGED]
+    repeatable_steps: [TREATED]
+
+measurement_definitions:
+  - id: LENGTH_OF_STAY
+    description: Elapsed time from admission to discharge.
+    kind: DURATION
+    unit: HOURS
+    provenance_class: INFERRED
+    expression:
+      op: DURATION_BETWEEN
+      operands:
+        - {op: ATTRIBUTE, event_type: ADMITTED, attribute: admitted_at}
+        - {op: ATTRIBUTE, event_type: DISCHARGED, attribute: discharged_at}

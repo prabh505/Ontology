@@ -163,8 +163,16 @@ def check_file(path: Path) -> int:
             continue
 
         # F4 -- persistence adapters are wired only by orchestration.
+        # A package importing itself is never a forbidden edge: "a package may import its
+        # own layer" (docs/architecture.md §1.1). This is the SECOND instance of that hole
+        # -- ADR-0026 fixed the same one in F3, where it stayed invisible until
+        # `ontology_runtime` held code. F4 had it too, and it stayed invisible for exactly
+        # the same reason: `persistence` was four empty scaffold packages, so the rule had
+        # nothing to fire on. A rule that cannot fire has not been observed to work
+        # (DEF-0001), which is why both now carry a MUST_ACCEPT self-test case.
         if (
             target_package == PERSISTENCE
+            and source_package != PERSISTENCE
             and source_package not in PERSISTENCE_CONSUMERS
         ):
             report(
@@ -190,8 +198,13 @@ def check_file(path: Path) -> int:
             continue
 
         # F3 -- ontology consumption is restricted to mapping, extraction, and wiring.
+        # A package importing itself is never a forbidden edge: "a package may import its
+        # own layer" (docs/architecture.md §1.1). Without this clause the rule fired on
+        # `ontology_runtime`'s own internal imports -- which it did not do while that
+        # package was empty, so the hole was invisible until the ontology layer shipped.
         if (
             target_package == "ontology_runtime"
+            and source_package != "ontology_runtime"
             and source_package not in ONTOLOGY_CONSUMERS
         ):
             report(
@@ -253,6 +266,11 @@ MUST_ACCEPT: tuple[tuple[str, str], ...] = (
     ("causal_engine", "from causalog.core.types import Event\n"),
     ("orchestration", "from causalog.persistence.postgres import repo\n"),
     ("extraction", "from causalog.ontology_runtime import loader\n"),
+    # A package always may import itself. These two cases exist because F3 and then F4
+    # each once rejected it -- the same hole, found twice, both times only after the
+    # package in question stopped being empty scaffold and started holding code.
+    ("ontology_runtime", "from causalog.ontology_runtime import dsl\n"),
+    ("persistence", "from causalog.persistence.postgres import connection\n"),
     ("api", "from causalog.orchestration import facade\n"),
     ("core", "import hashlib\n"),
     ("core", "from pydantic import BaseModel\n"),

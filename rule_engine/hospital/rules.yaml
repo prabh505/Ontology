@@ -1,0 +1,165 @@
+# A rule pack for an unrelated domain, carried as proof that the rule DSL is not secretly
+# logistics-shaped.
+#
+# `ontology/packs/hospital/` exists for exactly this reason (ADR-0026): "an unrelated domain
+# with no dataset behind it, carried as proof that the DSL is not secretly logistics-shaped."
+# The same claim has to hold for the rule DSL, and a claim nothing exercises is a claim
+# nobody has tested. This pack loads through the identical code path as
+# `rule_engine/dataco/rules.yaml`, with no branch anywhere selecting on domain.
+#
+# THERE IS NO DATASET BEHIND THIS. No SourceReader, no mapping, no records. It is never
+# evaluated against facts, and every rule here is DOMAIN_EXPERTISE or ASSUMPTION by
+# necessity -- a DATASET_OBSERVATION would be a claim about data that does not exist.
+
+rule_pack_schema_version: "1.0.0"
+rule_pack_id: hospital
+rule_pack_version: "1.0.0"
+ontology_pack: hospital
+description: >-
+  A minimal rule pack over the hospital ontology, exercising every rule kind against a
+  vocabulary that shares no term with the logistics domain.
+
+rules:
+
+  - id: C-HOS-DISCHARGED-NOT-TREATED
+    kind: CONSTRAINT
+    description: >-
+      A discharged patient is not subsequently treated on the same episode.
+    rationale: >-
+      DISCHARGED is a declared terminal state of PATIENT, so no later occurrence involves
+      that episode. A candidate saying otherwise joins two episodes on a shared identifier.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      PATIENT.terminal_states declares DISCHARGED and no transition leaves it.
+    base_strength: 1.0
+    body:
+      subject_entity_type: PATIENT
+      subject_state: DISCHARGED
+      subject_role: SUBJECT
+      forbidden_event_type: TREATED
+
+  - id: R-HOS-ARRIVAL-PRECEDES-ASSESSMENT
+    kind: CAUSAL
+    description: >-
+      Arrival causes the assessment that follows it.
+    rationale: >-
+      The declared lifecycle moves ARRIVED to TRIAGED on TRIAGED, and there is no other
+      route into that state.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      PATIENT.lifecycle declares ARRIVED -> TRIAGED triggered_by TRIAGED.
+    base_strength: 0.80
+    body:
+      cause: {binding: CAUSE, event_type: ADMITTED}
+      effect: {binding: EFFECT, event_type: TRIAGED}
+      window: {minimum_seconds: 0, maximum_seconds: 86400}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-HOS-PLACEMENT-ENABLES-CARE
+    kind: CAUSAL
+    description: >-
+      Assigning a place causes the care that follows it.
+    rationale: >-
+      The declared lifecycle offers no route from AWAITING_BED to UNDER_TREATMENT that does
+      not pass through IN_BED.
+    author: rule-engine-build
+    knowledge_provenance: DOMAIN_EXPERTISE
+    evidence_basis: >-
+      PATIENT.lifecycle sequences AWAITING_BED -> IN_BED -> UNDER_TREATMENT.
+    base_strength: 0.75
+    body:
+      cause: {binding: CAUSE, event_type: BED_ASSIGNED}
+      effect: {binding: EFFECT, event_type: TREATED}
+      window: {minimum_seconds: 0, maximum_seconds: 172800}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+
+  - id: R-HOS-CARE-PRECEDES-RELEASE
+    kind: CONDITIONAL
+    description: >-
+      Care causes release, for the lower acuity band only.
+    rationale: >-
+      prd.md §26's conditional cause, in a vocabulary that shares no term with logistics.
+      The condition addresses a role-bound attribute exactly as the DataCo pack's does.
+    author: rule-engine-build
+    knowledge_provenance: ASSUMPTION
+    evidence_basis: >-
+      ASSUMPTION. There is no dataset behind this pack at all, so nothing establishes that
+      acuity governs the arc, or that these are the right band names. The rule exists to
+      exercise the CONDITIONAL kind against a non-logistics vocabulary.
+    base_strength: 0.30
+    body:
+      cause: {binding: CAUSE, event_type: TREATED}
+      effect: {binding: EFFECT, event_type: DISCHARGED}
+      window: {minimum_seconds: 0, maximum_seconds: 604800}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+      conditions:
+        op: IN
+        values: ["ROUTINE", "STANDARD"]
+        operands:
+          - op: ATTRIBUTE
+            address: {binding: CAUSE, role: SUBJECT, attribute: acuity}
+
+  - id: R-HOS-ASSESSMENT-AND-PLACE-ENABLE-CARE
+    kind: JOINT
+    description: >-
+      Assessment together with a place jointly enable care.
+    rationale: >-
+      Neither alone reaches UNDER_TREATMENT in the declared lifecycle. Exercises the JOINT
+      kind's conjunctive semantics against a non-logistics vocabulary.
+    author: rule-engine-build
+    knowledge_provenance: ASSUMPTION
+    evidence_basis: >-
+      ASSUMPTION. No dataset stands behind this pack, so no co-occurrence is measured.
+    base_strength: 0.35
+    body:
+      contributors:
+        - {binding: ASSESSMENT, event_type: TRIAGED}
+        - {binding: PLACEMENT, event_type: BED_ASSIGNED}
+      effect: {binding: EFFECT, event_type: TREATED}
+      window: {minimum_seconds: 0, maximum_seconds: 172800}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+      joint_cause_group_id: ASSESSED_AND_PLACED
+
+  - id: M-HOS-ACUITY-AMPLIFIES-CARE
+    kind: AMPLIFICATION
+    description: >-
+      A high-acuity assessment increases the magnitude of the placement-to-care claim.
+    rationale: >-
+      Exercises the AMPLIFICATION kind and its multiplier bound against a non-logistics
+      vocabulary.
+    author: rule-engine-build
+    knowledge_provenance: ASSUMPTION
+    evidence_basis: >-
+      ASSUMPTION. No dataset stands behind this pack; the multiplier's size is arbitrary
+      and is here to exercise the bound, not to model anything.
+    base_strength: 0.30
+    body:
+      modifier: {binding: MODIFIER, event_type: TRIAGED}
+      modifies: R-HOS-PLACEMENT-ENABLES-CARE
+      window: {minimum_seconds: 0, maximum_seconds: 172800}
+      relation:
+        direction: SHARED_PARTICIPANT
+        cause_role: SUBJECT
+        effect_role: SUBJECT
+      magnitude_multiplier: 1.3
+      conditions:
+        op: EQUALS
+        operands:
+          - op: ATTRIBUTE
+            address: {binding: MODIFIER, role: SUBJECT, attribute: acuity}
+          - op: CONSTANT
+            value: "URGENT"

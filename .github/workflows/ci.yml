@@ -30,6 +30,22 @@ jobs:
       - name: Scan reasoning packages
         run: python scripts/check_domain_independence.py
 
+  confidence-is-a-vector:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Self-test the matcher
+        # Proves the lint fires on every shape a bare-float confidence takes -- bare field,
+        # prefixed, suffixed, defaulted, optional, list-of, and a confidence-named function
+        # returning float -- and stays clean on `EvidenceItem.strength`, the sanctioned bare
+        # float one field away. It also refuses a claimed false positive that really is a
+        # violation, which is the DEF-0001 root cause.
+        run: python scripts/check_confidence_is_a_vector.py --self-test
+      - name: Scan for bare-float confidence
+        run: python scripts/check_confidence_is_a_vector.py
+
   layer-boundaries:
     runs-on: ubuntu-latest
     steps:
@@ -76,6 +92,118 @@ jobs:
         run: python scripts/check_governance_consistency.py --self-test
       - run: python scripts/check_governance_consistency.py
 
+  metrics-are-declared:
+    # ADR-0026: a domain metric is declared in the pack as a MeasurementExpression tree and
+    # walked by the engine, never recomputed in engine code. A formula written into a
+    # reasoning module does not move when the ontology is swapped, which is LAW-DOMAIN
+    # defeated by a value rather than by a word -- the residual docs/architecture.md §1.5
+    # states, and the one the vocabulary lint cannot see.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Self-test the matcher
+        # Proves the lint fires on every shape inline metric arithmetic takes -- named
+        # operand, metric-named assignment target, in-place update, annotated binding -- and
+        # stays clean on loop counters and confidence weighting. It also refuses a claimed
+        # false positive that really does compute a metric, which is the DEF-0001 root cause.
+        run: python scripts/check_metrics_are_declared.py --self-test
+      - name: Scan reasoning packages
+        # The P2 exit: Timeline Builder and State Engine (modules 5-6) are the first
+        # reasoning modules built, so the scan is real now and the NOT-YET-RUNNABLE
+        # tolerance this step carried is gone -- a real violation must fail the build.
+        run: python scripts/check_metrics_are_declared.py
+
+  migration-pairs:
+    # ADR-0033: ADR-0015 excludes every migration framework, so the property a framework
+    # would have given for free -- "this migration can be undone" -- has to be checked.
+    # A migration nobody can undo is one nobody will risk applying, and "forward-only" in
+    # practice means "irreversible in an incident".
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Self-test the rules
+        # Proves each rule rejects its violation: a forward with no reverse, a reverse with
+        # no forward, a dated filename, and a gap in the series.
+        run: python scripts/check_migration_pairs.py --self-test
+      - run: python scripts/check_migration_pairs.py
+
+  rule-pack:
+    # prd.md §46: "Never hardcode logistics logic into source code." A rule pack is data,
+    # and data that nothing validates drifts from the ontology it is written against until
+    # a rule quietly matches a type nobody declares. This job is what stops that. It needs
+    # no services and no database: the pack, the ontology and the mapping are all files.
+    name: rule-pack (prd.md §46)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install the distribution
+        run: pip install -e backend
+      - name: Self-test the checks
+        # Proves each check rejects the violation it exists to catch -- an undeclared event
+        # type, an undeclared role, an undeclared relationship, a condition over an
+        # attribute nothing declares, an orphan modifier, a duplicate identifier, two
+        # opposed modifiers, two identical rules -- AND that it still accepts a well-formed
+        # pack and the constraint/generator pair that an earlier version wrongly refused.
+        # A check observed only to pass has not been observed to work (DEF-0001, ADR-0019).
+        run: python scripts/check_rule_pack.py --self-test
+      - name: Check the DataCo rule pack and report coverage
+        # `--no-write` because CI must not produce a report file that then differs from the
+        # committed one; `make rules DATASET=dataco` is what refreshes it.
+        run: python scripts/check_rule_pack.py --dataset dataco --no-write
+
+  projection-drift:
+    # ADR-0001 makes Neo4j a projection with no authority, and "a write with no backing
+    # PostgreSQL fact is a defect" is worth what a check makes it worth. Only the SELF-TEST
+    # runs here: the scan needs a live stack and a run_id, and it is `make verify-projection`
+    # in the integration job's territory. What this proves is that the comparison still
+    # rejects a mismatch -- including the subset-label trap, where Location and ExternalEvent
+    # are additional labels on nodes already counted, so a check that summed every label
+    # would report drift on a perfectly correct projection and get routed around.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python scripts/check_projection_drift.py --self-test
+
+  ontology-schema:
+    # The published JSON Schema is generated from the pydantic models in
+    # `causalog.ontology_runtime.dsl`, which are normative (ADR-0026). Two descriptions of
+    # one contract that are free to disagree eventually do, and the disagreement surfaces as
+    # a pack one validator accepts and the other rejects. This job is what stops them
+    # drifting. The self-test runs first, as every check in this repository does: a check
+    # observed only to pass has not been observed to work (DEF-0001).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install the distribution
+        run: pip install -e backend
+      - name: Self-test the export
+        run: python scripts/export_ontology_schema.py --self-test
+      - run: python scripts/export_ontology_schema.py --check
+
+  stack-preflight:
+    # The preflight's *scan* is meaningless here -- a CI runner is not a developer laptop
+    # and has no stack to inspect. Its classification logic is not: this job proves the
+    # memory floor, the port comparison, and the our-own-stack exemption still behave, so
+    # the check cannot rot into one that passes on every environment. Same rule as the law
+    # scripts (ADR-0019), applied to a script that is deliberately not a law.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Self-test the preflight
+        run: python scripts/check_stack_preflight.py --self-test
+
   # ---------------------------------------------------------------------------
   # Python
   # ---------------------------------------------------------------------------
@@ -106,8 +234,8 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12", cache: pip}
       - run: pip install -e "backend[dev]"
-      - name: Unit, law, and determinism tests
-        run: pytest tests/unit tests/law tests/determinism
+      - name: Unit, law, ontology, and determinism tests
+        run: pytest tests/unit tests/law tests/ontology tests/determinism
         working-directory: backend
 
   integration:
@@ -146,6 +274,12 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12", cache: pip}
       - run: pip install -e "backend[dev]"
+      - name: Apply the migration series
+        # `make up` deliberately does not migrate, and neither does the CI service
+        # container: the PostgreSQL init directory applies *.sql without writing the
+        # ledger, which leaves a schema that exists and a ledger that says nothing was
+        # applied (ADR-0033). The runner is the only thing that records an application.
+        run: python scripts/migrate.py
       - name: Integration, pipeline, graph, ontology, counterfactual, and API tests
         run: pytest tests/integration tests/pipeline tests/graph tests/ontology tests/counterfactual tests/api
         working-directory: backend
