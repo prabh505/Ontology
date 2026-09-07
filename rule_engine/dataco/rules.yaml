@@ -38,14 +38,503 @@
 # LAW-TIME verdict on each firing is what carries the resulting uncertainty, and a pair the
 # data cannot separate is reported UNDETERMINED rather than admitted or dropped (ADR-0007).
 
-rule_pack_schema_version: "1.0.0"
+rule_pack_schema_version: "1.7.0"
 rule_pack_id: dataco
-rule_pack_version: "1.0.0"
+rule_pack_version: "1.7.0"
 ontology_pack: dataco
 description: >-
   Causal, constraint, conditional, joint, amplifying and inhibiting rules over the DataCo
   ontology's twenty declared event types. Covers prd.md §25's chain as far as the ontology
   reaches, and no further.
+
+# ---------------------------------------------------------------------------------------
+# CANDIDATE GENERATION (rule_pack_schema_version 1.1.0)
+#
+# Module 9's generator parameters. These are DATA for the same reason the rules are: a
+# window width, a hop bound, a support threshold and a per-effect cap all decide which
+# hypotheses the engine is willing to entertain. A number written into `causal_engine/`
+# would not move when the domain is swapped, which is LAW-DOMAIN defeated by a value rather
+# than by a word (CONVENTIONS.md §6a).
+#
+# A WINDOW IS NOT A PRECEDENCE CLAIM. It bounds which pairs are worth considering.
+# Precedence is decided by causalog.core.temporal.verdict over the two intervals, and no
+# width here can override it.
+#
+# WHERE THESE WIDTHS COME FROM, and what they are not. Each is bounded by something the
+# pack or the dataset already states -- an adjacency in ORDER_TO_DELIVERY.canonical_sequence,
+# or an existing rule's window over the same ordered pair. NONE of them is calibrated
+# against measured inter-arrival times, because no such measurement has been made. They are
+# the same class of declaration as a rule's base_strength: authored, inspectable, and
+# revisable, and risk R-16 covers them exactly as it covers a rule.
+candidate_generation:
+  proximity_windows:
+    - cause_event_type: ORDER_PLACED
+      effect_event_type: PAYMENT_REQUESTED
+      window: {minimum_seconds: 0, maximum_seconds: 86400}
+      rationale: >-
+        Adjacent in ORDER_TO_DELIVERY.canonical_sequence. Both are stamped from `order
+        date`, so the pair is frequently temporally inseparable and will report
+        UNDETERMINED rather than a manufactured precedence.
+      evidence_strength: 0.45
+    - cause_event_type: PAYMENT_REQUESTED
+      effect_event_type: PAYMENT_APPROVED
+      window: {minimum_seconds: 0, maximum_seconds: 86400}
+      rationale: >-
+        Adjacent in the canonical sequence. Both are derived from one status value on one
+        record, so this window admits pairs the LAW-TIME gate will overwhelmingly mark
+        UNDETERMINED. That is the finding R-14 predicts, not a reason to narrow the window.
+      evidence_strength: 0.45
+    - cause_event_type: PAYMENT_APPROVED
+      effect_event_type: INVENTORY_RESERVED
+      window: {minimum_seconds: 0, maximum_seconds: 172800}
+      rationale: >-
+        Adjacent in the canonical sequence; matches the width R-DCO-APPROVAL-RESERVES
+        already declares over the same ordered pair, so the proximity generator and the
+        rule generator disagree about the pair's admissibility for no reason other than
+        evidence kind.
+      evidence_strength: 0.45
+    - cause_event_type: INVENTORY_RESERVED
+      effect_event_type: ITEM_PICKED
+      window: {minimum_seconds: 0, maximum_seconds: 172800}
+      rationale: >-
+        Adjacent in the canonical sequence. INVENTORY_RESERVED and ITEM_PICKED are both
+        declared repeatable_steps, so one instance may hold several of each and this
+        generator will propose every ordered pair the window admits.
+      evidence_strength: 0.45
+    - cause_event_type: ITEM_PICKED
+      effect_event_type: ITEM_PACKED
+      window: {minimum_seconds: 0, maximum_seconds: 172800}
+      rationale: >-
+        Adjacent in the canonical sequence, and both repeatable.
+      evidence_strength: 0.45
+    - cause_event_type: ITEM_PACKED
+      effect_event_type: SHIPMENT_DISPATCHED
+      window: {minimum_seconds: 0, maximum_seconds: 259200}
+      rationale: >-
+        Adjacent in the canonical sequence. Widened to three days because the boundary
+        crosses from order-date-derived instants to shipping-date-derived ones, and
+        `shipping date (DateOrders)` is bound at DAY precision on the strength of the
+        manufactured-precision measurement (R-20).
+      evidence_strength: 0.4
+    - cause_event_type: SHIPMENT_DISPATCHED
+      effect_event_type: SHIPMENT_IN_TRANSIT
+      window: {minimum_seconds: 0, maximum_seconds: 259200}
+      rationale: >-
+        Adjacent in the canonical sequence; matches R-DCO-DISPATCH-STARTS-TRANSIT's window
+        over the same ordered pair. SHIPMENT_IN_TRANSIT is an optional_step, so absence is
+        legitimate and produces no candidate rather than a gap.
+      evidence_strength: 0.45
+    - cause_event_type: SHIPMENT_IN_TRANSIT
+      effect_event_type: SHIPMENT_DELIVERED
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      rationale: >-
+        Adjacent in the canonical sequence. Thirty days because actual transit duration is
+        recorded in whole days and the dataset's upper tail is not bounded by the pack.
+      evidence_strength: 0.4
+    - cause_event_type: SHIPMENT_DISPATCHED
+      effect_event_type: SHIPMENT_DELIVERED
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      rationale: >-
+        NOT adjacent in the canonical sequence -- SHIPMENT_IN_TRANSIT sits between them and
+        is optional. Declared so that an instance which never witnessed transit still
+        produces a proximity candidate, rather than the generator falling silent exactly
+        where the source is thinnest.
+      evidence_strength: 0.3
+    - cause_event_type: SHIPMENT_DELIVERED
+      effect_event_type: ORDER_COMPLETED
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      rationale: >-
+        Adjacent in the canonical sequence; matches R-DCO-DELIVERY-COMPLETES.
+      evidence_strength: 0.45
+    - cause_event_type: ORDER_COMPLETED
+      effect_event_type: ORDER_CLOSED
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      rationale: >-
+        Adjacent in the canonical sequence. ORDER_CLOSED is an optional_step.
+      evidence_strength: 0.4
+    - cause_event_type: SHIPMENT_DISPATCHED
+      effect_event_type: SHIPMENT_DELAYED
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      rationale: >-
+        Not a sequence adjacency: SHIPMENT_DELAYED is reconstructed from the gap between
+        promised and actual transit duration, both stamped at dispatch. Matches the width
+        R-DCO-DISPATCH-MISS-DELAYS declares over the same ordered pair.
+      evidence_strength: 0.35
+    - cause_event_type: INVENTORY_SHORTFALL_DETECTED
+      effect_event_type: INVENTORY_RELEASED
+      window: {minimum_seconds: 0, maximum_seconds: 2592000}
+      rationale: >-
+        Matches R-DCO-SHORTFALL-RELEASES. Both types are DERIVED, so every candidate over
+        this pair rests on two reconstructions and none of them may reach INFERRED on the
+        strength of an OBSERVED record.
+
+      evidence_strength: 0.35
+  # Bounded at 2 rather than left open. The relationship graph is module 7's output and does
+  # not exist yet, so this generator reports 0 candidates over 0 relationships today; the
+  # bound is declared now so that the number is a declaration rather than a default someone
+  # discovers later. Two hops reaches a sibling through a shared parent, which is the
+  # shortest path that is not already covered by the shared-entity generator.
+  structural_max_hops: 2
+  # What a two-hop structural connection is worth as evidence. Lower than a shared
+  # participant, because a path through an intermediary is a weaker link than identity.
+  structural_path_strength: 0.25
+
+  # A pattern must recur in at least this many process instances before co-occurrence is
+  # offered as a hypothesis. Twenty is a declaration, not a measurement: nothing here has
+  # been calibrated against a recurrence distribution, and R-16 covers it.
+  minimum_support_count: 20
+  historical_frequency_strength: 0.40
+
+  # Lift must exceed independence by this factor. 1.0 would admit every pair that co-occurs
+  # at all, which is not an association; 1.2 is the authored floor.
+  minimum_lift: 1.2
+  # Association is the weakest evidence kind in the pack, and it is weighted to say so.
+  # It carries STATISTICAL provenance and can never be promoted to INFERRED (ADR-0003).
+  statistical_association_strength: 0.20
+
+  # The per-effect explosion bound. Twenty proposals for one effect is already more than a
+  # reader will inspect, and everything beyond it is REPORTED as truncated rather than
+  # dropped -- see the module's TruncationRecord.
+  per_effect_candidate_cap: 20
+
+  # A shared participant is the strongest non-rule linkage the pack can state: the two
+  # events name one entity, which is a fact about the records rather than a belief.
+  shared_entity_strength: 0.55
+  # A shared non-participant identifier is weaker -- it links two records without
+  # establishing that they concern one modelled thing.
+  shared_identifier_strength: 0.35
+  #
+  # DELIBERATELY EMPTY, which switches the shared-identifier generator OFF, and the
+  # Candidate Graph Report says so under NOT_RUNNABLE rather than reporting a clean zero.
+  #
+  # DataCo's Event carries no non-participant identifier. Every identifier the source
+  # records -- customer, product, department, region -- becomes a participant entity
+  # through the mapping's identity bindings, which is the shared-entity generator's
+  # territory. What remains in Event.metadata is what the Event Generator stamps for
+  # traceability: observation_mode, emission, occurred_at_policy.
+  #
+  # MEASURED, NOT ASSUMED. A first draft of the generator read all of metadata and
+  # proposed 87,446 candidates over a 150-row slice -- every pair of events sharing an
+  # observation mode, exactly matching the shared-entity generator's count and saying
+  # nothing about the domain. Declaring the keys and leaving them empty reports the gap
+  # instead of filling the graph with it.
+  identifier_metadata_keys: []
+
+# ---------------------------------------------------------------------------------------
+# CONFIDENCE SCORING (rule_pack_schema_version 1.2.0, ADR-0053)
+#
+# Module 10's DOMAIN knobs. The aggregation strategy is NOT here: the six addend weights
+# and the two gate ceilings live in `causalog.core.aggregation` under the versioned name
+# `gated_weighted_mean_v1`, because `ConfidenceVector.aggregation` records the function
+# that produced a scalar so a consumer can recompute it -- and a pack-supplied weight
+# would make one recorded name mean two different arithmetics (ADR-0052).
+#
+# What IS here is what describes DataCo rather than the strategy. Every number is a
+# declaration, not a measurement. This dataset carries no labelled causal ground truth, so
+# nothing below has been fitted to anything, and R-16 covers it.
+#
+# ABSENT MEANS NOT SCORABLE. A component whose knob is missing is emitted at zero and
+# reported as missing -- never silently skipped, and never defaulted (ADR-0049's rule,
+# carried forward).
+# ---------------------------------------------------------------------------------------
+confidence_scoring:
+
+  # The lift at which historical and statistical support reach 1.0. Lift 1.0 is
+  # independence and always scores zero; 3.0 says "three times more often than chance is
+  # as impressive as this domain gets". Chosen above minimum_lift (1.2) by enough that
+  # clearing the generator's floor does not by itself produce a strong component -- an
+  # association that barely qualifies to be PROPOSED should not score as though it were
+  # decisive.
+  lift_reference: 3.0
+
+  # The pseudo-count in the small-sample shrinkage n / (n + prior). At 20, a pattern seen
+  # in 20 instances scores half what the same lift would score with unlimited support.
+  # Deliberately equal to minimum_support_count: the count at which the generator is
+  # willing to PROPOSE is the count at which the scorer is half-convinced, which keeps the
+  # two thresholds from disagreeing silently.
+  small_sample_prior_count: 20
+
+  # The k in the saturating evidence count n / (n + k). Three, because the per-effect cap
+  # is 20 and most surviving edges carry between one and four justifications: k = 3 puts
+  # the interesting range in the steep part of the curve rather than in its flat tail.
+  evidence_count_saturation_k: 3
+
+  # The separation at which temporal tightness has halved. 86400 == one day, which is the
+  # precision `shipping date (DateOrders)` is bound at: a pair whose separation is known
+  # only to within the source's own granularity scores 0.5, not 1.0. This is the number
+  # that makes manufactured precision expensive.
+  temporal_reference_seconds: 86400
+
+  # What an UNDETERMINED verdict is worth. The data placed both events and could not
+  # separate them. 0.15 rather than 0.0 because the events WERE placed -- that is more
+  # than nothing and much less than an order -- and it sits below the temporal ceiling's
+  # first anchor so an UNDETERMINED edge is capped near 0.4. CONTEXT.md R-14 predicts this
+  # governs most of the graph on a day-granular source; that is the finding, not a reason
+  # to raise the number.
+  undetermined_temporal_support: 0.15
+
+  # What temporal_support is CAPPED at when the source computed the later instant from the
+  # earlier one. Module 1 measures the pack's declared derivation checks over every evaluable
+  # row; where one is confirmed, the two instants cannot overlap however the data fell, so a
+  # CERTAIN verdict over that pair is arithmetic and not observation.
+  #
+  # 0.10, BELOW undetermined_temporal_support (0.15), and the sequence is deliberate. An
+  # UNDETERMINED pair was placed twice and could not be separated -- that is genuine
+  # information the engine could not resolve. A derived pair was placed ONCE, and the second
+  # instant is the first restated; there is strictly less here than in the tie. Like that
+  # number this is a COMPONENT value: through the temporal ceiling anchors 0.10 caps the
+  # scalar near 0.33.
+  derived_precedence_temporal_support: 0.10
+
+  # How many of the eight components must carry real support before the edge is called
+  # scored at all. Below it the edge is INSUFFICIENT_EVIDENCE, which is a different outcome
+  # from a low score and is never shown as a band.
+  #
+  # MEASURED, NOT GUESSED, and corrected once already. This was authored at 3 and the
+  # confidence report said in as many words that the floor could not fire: three of the
+  # eight components -- evidence_count, evidence_diversity and contradiction_freedom -- are
+  # properties of the claim's OWN evidence bundle and are therefore always measurable, so
+  # no edge can ever fall below three. A floor that cannot fire is not a lenient threshold;
+  # it is an absent one, and an INSUFFICIENT_EVIDENCE count of zero underneath it says
+  # nothing about the data.
+  #
+  # The observed distribution over the 150-row slice is 4: 1,957 · 5: 930 · 6: 5,238 ·
+  # 7: 1,367 (never 8 -- graph_connectivity is missing everywhere until module 7 exists).
+  # Five is the first value that separates anything, and it separates the right thing: an
+  # edge measuring only four has the three self-referential components plus temporal
+  # standing, and NOTHING that looks outside its own evidence bundle -- no rule wrote it
+  # down and no base rate could be computed for its type pair. That is not a weak claim.
+  # It is a claim nobody checked.
+  minimum_scored_components: 5
+
+  # No edge may be promoted to INFERRED below this band. Promotion is a judgement, and
+  # this line is where the judgement is written down rather than compiled in.
+  promotion_band: STRONG
+
+  # The published bands. Thresholds and wording BOTH live here -- a band boundary in UI
+  # code is a policy no reviewer can find and no test can pin, and it differs silently
+  # between two screens showing one edge (prd.md §49).
+  confidence_bands:
+    - name: STRONG
+      minimum_scalar: 0.70
+      plain_language: >-
+        Strong evidence. Several independent lines of support agree, the ordering of the
+        two events is established, and nothing on record contradicts the claim. Still not
+        proof of causation: this engine measures support, and no part of it identifies a
+        causal effect.
+    - name: SUGGESTIVE
+      minimum_scalar: 0.45
+      plain_language: >-
+        Suggestive. There is real support here, but at least one leg is weak -- commonly
+        the ordering, which on this dataset is frequently unresolvable. Worth
+        investigating; not worth acting on alone.
+    - name: WEAK
+      minimum_scalar: 0.0
+      plain_language: >-
+        Weak -- inspect before acting. Either the support is thin, the ordering could not
+        be established, or something on record argues against the claim. The breakdown
+        beside this label says which; read it before using this edge for anything.
+
+
+# ---------------------------------------------------------------------------------------
+# GRAPH CONSTRUCTION (rule_pack_schema_version 1.3.0, ADR-0055)
+#
+# The Causal Graph Builder's selection policy: which scored claims this pack is willing to
+# have the engine STAND BEHIND, how competing causes for one effect are handled, and which
+# declared measurement supplies the magnitude a propagation weight apportions.
+#
+# Promotion moved here from confidence_scoring.promotion_band (ADR-0054). That field is
+# still below, still parsed, and no longer read; the loader warns about it. It is left in
+# place deliberately -- removing it is this pack author's edit, not a silent change of
+# meaning made on their behalf.
+#
+# EVERY FIELD HERE IS OPTIONAL AND ABSENT MEANS THE POLICY CANNOT RUN. That is ADR-0049's
+# rule for the third time, and it matters most here: a defaulted promotion threshold would
+# be the engine deciding on its own authority what it is willing to assert.
+# ---------------------------------------------------------------------------------------
+graph_construction:
+
+  # One threshold per edge kind, because a DIRECT claim and an AMPLIFYING claim are not the
+  # same assertion. STRONG for both kinds this pack can actually produce -- the same floor
+  # confidence_scoring.promotion_band declared before it moved, so this edit changes WHERE
+  # the judgement is written and not WHAT it says.
+  #
+  # AMPLIFYING, INHIBITING and CONTRIBUTING are absent, and their absence is a statement
+  # rather than an omission. This pack holds exactly one AMPLIFICATION rule, one INHIBITION
+  # rule and one JOINT rule, all three authored to exercise the kind; none of them has been
+  # measured against anything, and declaring a floor for a kind nobody has evidence about
+  # would be a policy invented to fill a row. The graph quality report names each absent
+  # kind and says what it would need.
+  promotion_thresholds:
+    - edge_kind: DIRECT
+      minimum_band: STRONG
+      rationale: >-
+        A DIRECT edge is the engine's plainest assertion -- A produced B with no modelled
+        intermediary -- and it is the one a reader is most likely to act on without reading
+        the breakdown beneath it. STRONG is the highest band this pack declares, and on a
+        day-granular source almost nothing reaches it: CONTEXT.md R-14 predicts that, the
+        measured run confirms it, and the correct response is an empty graph with a
+        rejection ledger rather than a lower floor.
+    - edge_kind: CONDITIONAL
+      minimum_band: STRONG
+      rationale: >-
+        The same floor as DIRECT, deliberately, and not because the two are the same kind
+        of claim. A CONDITIONAL edge carries its qualifying condition and the result of
+        evaluating it, so a reader can see more of the reasoning -- which argues for a
+        LOWER floor. It also asserts a mechanism plus a scope, which is more to be wrong
+        about, and that argues for a higher one. Nobody here has evidence about which
+        effect dominates, so the two floors are held equal until somebody does.
+
+  # Several causes for one effect is the normal case, not a competition to be resolved:
+  # prd.md §27 says every event may have multiple candidate causes, and §26's CONTRIBUTING
+  # category exists precisely because outcomes are jointly produced. Keeping only the
+  # strongest would silently convert a joint cause into a single one.
+  competing_effect_policy: RETAIN_ALL
+
+  # The most a claim may gain in the tie-break from having been reached by several
+  # independent generators. Small on purpose: module 10 has ALREADY scored
+  # evidence_diversity and evidence_count from the same fact, and this number exists only
+  # to break ties between claims the scorer could not separate. It never moves a scalar.
+  diversity_credit_ceiling: 0.05
+
+  # Which declared measurement supplies the magnitude a weight apportions. Only two effect
+  # types in this pack have one, and that is the honest count rather than a shortfall to be
+  # padded: a magnitude has to be a quantity the DATASET carries, and DataCo carries a
+  # delay and a line value. Every other effect type falls back to normalized confidence
+  # share, which is a share of BELIEF and not a share of a quantity, and the graph quality
+  # report names every effect that fell back.
+  magnitude_attributions:
+    - effect_event_type: SHIPMENT_DELAYED
+      measurement_id: SHIPPING_DAYS_VARIANCE
+      rationale: >-
+        Days taken beyond days promised is this pack's primary delay metric and is the
+        quantity a reader means when they ask how much of a delay a cause is responsible
+        for. Both operands are day-granularity, so the apportioned quantity inherits that
+        granularity and is never reported more finely than the source supports.
+    - effect_event_type: SHIPMENT_DELIVERED
+      measurement_id: SHIPPING_DAYS_VARIANCE
+      rationale: >-
+        The same metric on the event that witnesses it. SHIPMENT_DELIVERED is where
+        actual_shipping_days is recorded, so an attribution over a delivery apportions the
+        variance the delivery itself established.
+
+  # Declared rather than implied. A weight is a share, shares have to sum to something, and
+  # SHARE_OF_INCOMING says what over: the summed confidence of one effect's incoming
+  # contributing edges. Modifier kinds (AMPLIFYING, INHIBITING) are excluded from that basis
+  # by the engine, because a modifier is not a contributor and giving it a share would make
+  # it look like one.
+  weight_normalization: SHARE_OF_INCOMING
+
+  # The most elementary circuits to enumerate per strongly connected component. 200 is a
+  # reporting bound, not a belief about how many loops exist: circuit enumeration is
+  # exponential in the worst case, and a component that exceeds this reports truncation --
+  # naming the component and the count it stopped at -- rather than running until somebody
+  # kills the process.
+  circuit_enumeration_cap: 200
+
+  # The fewest participants a circuit must have before it is reported as a loop. Two, which
+  # admits mutual pairs: on this source a mutual pair between two event types stamped from
+  # one date column is the SIGNATURE of the temporal ambiguity R-14 describes, and excluding
+  # it would hide the artifact this pack most expects to see.
+  loop_minimum_participants: 2
+
+# ---------------------------------------------------------------------------
+# PROPAGATION ANALYSIS (rule_pack_schema_version 1.5.0) -- module 12.
+#
+# Every field is optional and an absent one means the policy CANNOT RUN and is reported.
+# ---------------------------------------------------------------------------
+propagation_analysis:
+
+  # Six, which is prd.md §30's own example depth and is also the length of this domain's
+  # longest declared canonical sequence. It is a REPORTING bound, not a belief about how
+  # far consequence travels: a traversal that reaches it reports truncation naming the
+  # frontier it stopped at, and is never printed as a completed sweep.
+  maximum_depth: 6
+
+  # A separate bound from the depth, because a shallow very wide fan-out and a deep narrow
+  # chain are different shapes and one number cannot bound both. 5000 is roughly four times
+  # the event count of the committed bounded run, so on that slice it does not bind and the
+  # depth bound is what is being measured.
+  traversal_node_cap: 5000
+
+  # How readings of one measurement combine across the set of affected consequences.
+  # Sorted by measurement_id: the block is read in document sequence and an unsorted one
+  # hashes differently from an identical sorted one.
+  impact_aggregation:
+    - measurement_id: LINE_NET_VALUE
+      operator: SUM
+      rationale: >-
+        Currency over distinct subjects adds. Two consequences carrying this measurement
+        are two different line values, and the money at stake across both is their total.
+    - measurement_id: ORDER_MARGIN
+      operator: SUM
+      rationale: >-
+        Currency again, and read straight from a source column rather than recomputed, so
+        two instances' figures are independent quantities that add.
+    - measurement_id: SHIPPING_DAYS_VARIANCE
+      operator: MAXIMUM
+      rationale: >-
+        Elapsed days over OVERLAPPING periods do not add. Two consequences in one process
+        instance are late by overlapping spans of the same calendar, and summing them would
+        report more lateness than the calendar contains. The largest variance stands for
+        the set; it is a lower bound on the harm and is stated as one. Declared here rather
+        than in engine code precisely because a domain whose instances do not overlap would
+        legitimately declare SUM.
+
+  # Names a function registered in `causalog.core.composition`. The weakest link: this
+  # pack's numbers are not calibrated (OQ-024), so a product would report chain LENGTH
+  # while appearing to report belief. The product is computed and reported beside it, in
+  # its own column, and the two are never blended.
+  path_confidence_composition: weakest_link_v1
+
+
+# ---------------------------------------------------------------------------
+# ROOT CAUSE ANALYSIS (rule_pack_schema_version 1.5.0) -- module 11.
+#
+# There is deliberately no weighting between earliness and prevented consequence. ADR-0008
+# ruled that the two are not commensurable and that any weighting would be an unexplainable
+# constant; earliness is a tie-break and never a term. The field is absent because the
+# number must not exist, not because nobody has added it.
+# ---------------------------------------------------------------------------
+root_cause_analysis:
+
+  # Names a function registered in `causalog.core.ranking`.
+  ranking_function: prevented_weight_v1
+
+  # The floor a chain must compose to before it is RECOMMENDED. Set to this pack's
+  # SUGGESTIVE band floor rather than to a second number, so that "worth acting on" and
+  # "worth believing" are the same threshold and a reader does not have to reconcile two.
+  # A chain below it is still reported, with its number, under a heading that says it was
+  # considered and not recommended.
+  minimum_chain_scalar: 0.45
+
+  # The most candidate causes one ranking considers. Reaching it is truncation and is
+  # reported as such.
+  candidate_cap: 500
+
+  # How often a cause-to-outcome pattern must recur before the word "structural" is used
+  # for it. Recurrence is COUNTED whatever this says; only the JUDGEMENT needs a threshold.
+  recurrence_minimum_support: 3
+
+
+# ---------------------------------------------------------------------------
+# PATTERN MINING (rule_pack_schema_version 1.5.0) -- the structural pattern miner, which
+# is deliberately not one of the prd.md §36 modules.
+# ---------------------------------------------------------------------------
+pattern_mining:
+
+  # A motif seen twice is a coincidence; the pack asks for three before reporting it.
+  motif_minimum_support: 3
+
+  # Enumeration over the type projection is exponential in this bound. Four steps is long
+  # enough to carry prd.md §29's storm-to-complaint shape and short enough to enumerate.
+  motif_maximum_length: 4
+
+  # The degree at which a node in the type projection is called a chronic bottleneck. Five,
+  # against twenty declared event types: a type on one edge in four is a hub in this domain
+  # and would not be in a domain with two hundred types.
+  bottleneck_minimum_degree: 5
+
 
 rules:
 
@@ -697,3 +1186,104 @@ rules:
             address: {binding: MODIFIER, role: SERVICE, attribute: shipping_mode_name}
           - op: CONSTANT
             value: "First Class"
+
+
+# ---------------------------------------------------------------------------------------
+# Module 13's simulation bounds (rule_pack_schema_version 1.6.0, ADR-0071).
+#
+# prd.md §55 gives a counterfactual query five seconds. Every number below exists to keep
+# it inside that, or to say where a hypothetical stops being supported by anything this
+# dataset witnessed. None of them makes a simulated figure correct.
+# ---------------------------------------------------------------------------------------
+counterfactual_simulation:
+
+  # Six steps. prd.md §25's printed chain -- inventory mismatch through to revenue impact --
+  # is five links, so six carries it end to end with one step of margin and stops well short
+  # of the module's ceiling. Longer would not be more honest: belief composes under the
+  # weakest link, so a seventh step cannot raise an answer and can only spend the budget.
+  maximum_simulation_depth: 6
+
+  # The largest number of occurrences one hypothetical may touch. Two thousand against the
+  # 1,224 occurrences the committed slice holds, so the cap does not bind at this scale and
+  # is a real bound at any larger one. A run that reaches it reports truncation and never
+  # presents a partial sweep as a finished one.
+  affected_subgraph_node_cap: 2000
+
+  # How far outside the range this run actually witnessed a changed value may travel before
+  # the outcome is returned as EXTRAPOLATION rather than as a figure. 0.10 is one tenth of
+  # the witnessed range: close enough to the edge of the data to be an interpolation in all
+  # but name, and anything beyond it is a claim about a region nothing in the source
+  # observed. It is not a confidence interval and it is not calibrated (R-23).
+  support_envelope_tolerance: 0.10
+
+  # The assumption sweep. Each multiplier is applied to the simulated outcome to see whether
+  # the answer survives an assumption the data cannot adjudicate. Half and double are
+  # deliberately coarse: the apportioned weights these outcomes rest on are attributions
+  # rather than measurements (ATTRIBUTION_NOT_MEASUREMENT_NOTICE), so a fine sweep would
+  # imply a precision the inputs do not have.
+  sensitivity_perturbations: [0.5, 2.0]
+
+  # A chain is only as strong as its weakest link (ADR-0060). The product is reported beside
+  # it by the module and never blended into it.
+  path_composition: weakest_link_v1
+
+# ---------------------------------------------------------------------------------------
+# Module 14's ranking weights and search bounds (rule_pack_schema_version 1.7.0, ADR-0079).
+#
+# THE WEIGHTS ARE THE SHARPEST NUMBERS IN THIS FILE. They decide which intervention an
+# operator sees first. No arithmetic anywhere can establish them: they are a statement of
+# what this organisation would rather have, and they are written here so that a reader can
+# see the statement and disagree with it rather than having to infer it from a ranking.
+#
+# The ORDER is prd.md §50's, verbatim -- "Highest Benefit / Lowest Cost / Highest
+# Confidence". The MAGNITUDES are ours, and nothing in the PRD constrains them. Risk does
+# not appear in §50's ranking function at all, only in its score list, so it is weighted
+# last; that is a reading of the PRD, not a claim that risk matters least.
+#
+# Confidence is deliberately NOT carried mainly by its weight. It acts first as a GATE --
+# minimum_belief_to_publish below -- and only then as a term. This is module 10's
+# ruling that some components are gates rather than addends (ADR-0052), applied one layer
+# up: a weight lets a large benefit buy its way past a weak belief, and a floor does not.
+# ---------------------------------------------------------------------------------------
+recommendation:
+
+  scalarization: weighted_desirability_v1
+
+  # Sequenced by objective name, which is the canonical form the loader refuses to sort for
+  # you (CONVENTIONS.md §11). Sums to 1.0 by choice, not by requirement -- the scalarizer
+  # divides by the total, so the ranking is unchanged if every weight here is doubled.
+  objective_weights:
+    - objective: benefit
+      weight: 0.40
+    - objective: confidence
+      weight: 0.20
+    - objective: cost
+      weight: 0.25
+    - objective: risk
+      weight: 0.15
+
+  # Twelve candidates is 4,095 non-empty subsets, which is enumerable well inside prd.md
+  # §55's five seconds. Above it the search is greedy and every set it returns says so.
+  cut_set_exact_ceiling: 12
+
+  # The largest node set the cut-set search may consider at all. Two hundred against the
+  # 1,224 occurrences the committed slice holds, so it binds at this scale and is a real
+  # bound at any larger one -- deliberately, because an unbounded search over a dense graph
+  # does not meet the budget and a truncated search that says so is worth more than a
+  # complete one that arrives late.
+  cut_set_node_cap: 200
+
+  # Three. A set an operator cannot execute as one act is not a recommendation, it is a
+  # project, and this engine has no standing to propose one.
+  portfolio_size_cap: 3
+
+  # prd.md §51's Workspace 6 is a ranked list a human reads to the end.
+  maximum_recommendations: 10
+
+  # "More likely than not that the chain holds." A candidate below this is WITHHELD to the
+  # ledger naming this threshold; it is never published at a low score, because a ranked
+  # list is read as a list of things to do and position in it outweighs any number printed
+  # beside it. This value is a judgement and it is not calibrated against anything -- no
+  # dataset here carries causal ground truth (R-23). It was NOT chosen to make this run
+  # produce results; if it withholds everything on the committed slice, that is the finding.
+  minimum_belief_to_publish: 0.50

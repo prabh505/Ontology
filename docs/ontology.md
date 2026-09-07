@@ -4,9 +4,21 @@
 > the truth about intent, `docs/architecture.md` about structure, `docs/contracts.md` about
 > the frozen core types, and `CONTEXT.md` about current state.
 >
-> **Status.** Pack schema version **1.0.0**, set by ADR-0026. The `OntologySpec` seam is
-> **frozen** at that version; changing it requires an ADR and a coordinated update of every
-> pack (`CONTEXT.md` §6).
+> **Status.** Pack schema version **1.1.0**, set by ADR-0026 and moved by **ADR-0067**. The
+> `OntologySpec` seam is **frozen**; changing it requires an ADR and a coordinated update of
+> every pack (`CONTEXT.md` §6), which is what ADR-0067 did.
+>
+> *1.1.0 (2026-09-07, ADR-0067): `AttributeSpec` gains three optional fields — `mutable`,
+> `admissible_values` and `admissible_range` — so a pack can say which attributes a
+> counterfactual may set differently. **Additive: a 1.0.0 pack's declarations are unchanged in
+> meaning**, and it simply declares no changeable attribute. The default REFUSES: an absent
+> `mutable` means no hypothetical may set that attribute, reported as a policy gap and never
+> read as permission (ADR-0049's rule, in the direction that withholds). `admissible_values`
+> and `admissible_range` are what the DOMAIN says is possible and are deliberately NOT the
+> range a run witnessed — that is measured separately as a support envelope (ADR-0070),
+> because a value can be entirely possible and entirely outside anything the data contains.
+> `ontology_hash` moves, so `run_id` moves; `dataset_version` does not, so no re-import is
+> needed.*
 
 ---
 
@@ -108,7 +120,7 @@ ontology; steps 8–11 are the other seams and land with the modules that own th
    case and carries no leading underscore. Copy `ontology/packs/hospital/ontology.yaml` as
    a starting point — it is the shortest complete pack in the repository.
 
-2. **Set the header.** `pack_schema_version: "1.0.0"` (the DSL's version, not yours),
+2. **Set the header.** `pack_schema_version: "1.2.0"` (the DSL's version, not yours),
    `pack_id: <domain>`, `ontology_version: "1.0.0"`, a `description`, and
    `extends: _base` unless you have a stated reason not to inherit the cost and severity
    vocabularies.

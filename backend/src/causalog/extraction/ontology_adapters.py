@@ -12,6 +12,8 @@ modules 5/6, not a change to either already-built module.
 from __future__ import annotations
 
 from causalog.core.ontology_view import (
+    ActionabilityView,
+    AttributeView,
     DurationExpressionOperator,
     DurationExpressionView,
     DurationMeasurementView,
@@ -19,6 +21,12 @@ from causalog.core.ontology_view import (
     EventTypeView,
     LifecycleTransitionView,
     LifecycleView,
+    MagnitudeMeasurementView,
+    MeasurementExpressionOperator,
+    MeasurementExpressionView,
+    MeasurementKindView,
+    MutabilityView,
+    OrdinalClassView,
     ParticipantView,
     ProcessDefinitionView,
     ProcessVariantView,
@@ -29,9 +37,15 @@ from causalog.ontology_runtime import ResolvedPack
 from causalog.ontology_runtime.dsl import ExpressionOperator, MeasurementExpression, MeasurementKind
 
 __all__ = [
+    "actionability_of",
+    "cost_classes_of",
     "duration_measurements_of",
     "lifecycles_of",
+    "magnitude_measurements_of",
+    "mutable_attributes_of",
     "process_definitions_of",
+    "risk_classes_of",
+    "severity_classes_of",
     "vocabulary_of",
 ]
 
@@ -99,6 +113,71 @@ def _view_of(expression: MeasurementExpression) -> DurationExpressionView:
         attribute=expression.attribute,
         value=expression.value,
         operands=tuple(_view_of(operand) for operand in expression.operands),
+    )
+
+
+# ---------------------------------------------------------------------------------------
+# Magnitude mirrors (ADR-0056). Unlike the duration mirror above, these exclude nothing:
+# every operator and every kind is carried, because a propagation-weight attribution may
+# legitimately reference an `IMPACT`, a `COST` or a `QUANTITY`, and refusing one here would
+# make a declared measurement invisible to the module that needs it rather than reporting
+# that it could not be evaluated.
+#
+# Written as explicit member-to-member tables rather than `Enum(value)` lookups so that a
+# member added to the DSL enum and not to the mirror fails HERE, at the boundary, naming the
+# member -- instead of at evaluation time inside a package that may not import the DSL.
+# ---------------------------------------------------------------------------------------
+
+_MAGNITUDE_OPERATOR_MIRROR = {
+    ExpressionOperator.CONSTANT: MeasurementExpressionOperator.CONSTANT,
+    ExpressionOperator.ATTRIBUTE: MeasurementExpressionOperator.ATTRIBUTE,
+    ExpressionOperator.SUM: MeasurementExpressionOperator.SUM,
+    ExpressionOperator.DIFFERENCE: MeasurementExpressionOperator.DIFFERENCE,
+    ExpressionOperator.PRODUCT: MeasurementExpressionOperator.PRODUCT,
+    ExpressionOperator.RATIO: MeasurementExpressionOperator.RATIO,
+    ExpressionOperator.DURATION_BETWEEN: MeasurementExpressionOperator.DURATION_BETWEEN,
+    ExpressionOperator.MINIMUM: MeasurementExpressionOperator.MINIMUM,
+    ExpressionOperator.MAXIMUM: MeasurementExpressionOperator.MAXIMUM,
+}
+
+_MAGNITUDE_KIND_MIRROR = {
+    MeasurementKind.DELAY: MeasurementKindView.DELAY,
+    MeasurementKind.DURATION: MeasurementKindView.DURATION,
+    MeasurementKind.COST: MeasurementKindView.COST,
+    MeasurementKind.IMPACT: MeasurementKindView.IMPACT,
+    MeasurementKind.COUNT: MeasurementKindView.COUNT,
+    MeasurementKind.RATIO: MeasurementKindView.RATIO,
+    MeasurementKind.QUANTITY: MeasurementKindView.QUANTITY,
+}
+
+
+def _magnitude_view_of(expression: MeasurementExpression) -> MeasurementExpressionView:
+    """Mirror one node of any measurement tree, recursively."""
+    return MeasurementExpressionView(
+        op=_MAGNITUDE_OPERATOR_MIRROR[expression.op],
+        event_type=expression.event_type,
+        attribute=expression.attribute,
+        value=expression.value,
+        operands=tuple(_magnitude_view_of(operand) for operand in expression.operands),
+    )
+
+
+def magnitude_measurements_of(pack: ResolvedPack) -> tuple[MagnitudeMeasurementView, ...]:
+    """Return every declared measurement, of every kind, as a plain view.
+
+    The counterpart to `duration_measurements_of` for propagation-weight attribution
+    (ADR-0056). Nothing is filtered: a measurement this consumer cannot use is reported as
+    unevaluable at attribution time, where the report can say which effect type lost its
+    magnitude and why, rather than vanishing at the boundary where nobody counts it.
+    """
+    return tuple(
+        MagnitudeMeasurementView(
+            id=measurement.id,
+            kind=_MAGNITUDE_KIND_MIRROR[measurement.kind],
+            unit=measurement.unit,
+            expression=_magnitude_view_of(measurement.expression),
+        )
+        for measurement in pack.measurement_definitions
     )
 
 
@@ -178,4 +257,103 @@ def vocabulary_of(pack: ResolvedPack) -> VocabularyView:
         event_types=event_types,
         entity_types=entity_types,
         relationship_types=relationship_types,
+    )
+
+
+def actionability_of(pack: ResolvedPack) -> tuple[ActionabilityView, ...]:
+    """Return every event type's actionability declaration, as plain views.
+
+    ADR-0008 stamps the BOOLEAN onto each `Event` at generation time so that the Root Cause
+    Analyzer never reads the ontology (forbidden edge F3). This function carries the rest of
+    the declaration -- the cost and severity classes -- across the same boundary and in the
+    same direction, because a boolean is enough to filter on and not enough to rank on.
+
+    Nothing is filtered and nothing is defaulted. A pack that declares a type
+    `actionable: false` appears here saying so, which is a different fact from a type that
+    is absent, and a consumer that dropped the false rows could not tell the two apart.
+
+    Sequenced by `event_type`, so two adapters over one pack produce one value.
+    """
+    return tuple(
+        ActionabilityView(
+            event_type=event_type.id,
+            actionable=event_type.actionability.actionable,
+            cost_class=event_type.actionability.cost_class,
+            severity_class=event_type.actionability.severity_class,
+            risk_class=event_type.actionability.risk_class,
+        )
+        for event_type in sorted(pack.event_types, key=lambda declared: declared.id)
+    )
+
+
+def cost_classes_of(pack: ResolvedPack) -> tuple[OrdinalClassView, ...]:
+    """Return the declared cost vocabulary as name-and-rank pairs, sequenced by rank.
+
+    Sequenced by rank rather than by name because rank is what a consumer compares, and a
+    sequence in rank sequence lets a reader of the artifact check the sequencing by eye.
+    Ties in rank are impossible -- the pack loader refuses them -- so the sequence is total.
+    """
+    return tuple(
+        OrdinalClassView(id=declared.id, rank=declared.rank)
+        for declared in sorted(pack.cost_classes, key=lambda member: (member.rank, member.id))
+    )
+
+
+def severity_classes_of(pack: ResolvedPack) -> tuple[OrdinalClassView, ...]:
+    """Return the declared severity vocabulary as name-and-rank pairs, sequenced by rank."""
+    return tuple(
+        OrdinalClassView(id=declared.id, rank=declared.rank)
+        for declared in sorted(pack.severity_classes, key=lambda member: (member.rank, member.id))
+    )
+
+
+def risk_classes_of(pack: ResolvedPack) -> tuple[OrdinalClassView, ...]:
+    """Return the declared operational-risk vocabulary as name-and-rank pairs, by rank.
+
+    ADR-0073. An EMPTY tuple is a pack that declares no risk vocabulary at all, and is
+    returned as such rather than as an error: module 14 reports the objective as
+    `NOT_DECLARED` and ranks on the remaining three. A vocabulary that exists while no
+    event type names a member is the same situation one level down and is reported the
+    same way.
+    """
+    return tuple(
+        OrdinalClassView(id=declared.id, rank=declared.rank)
+        for declared in sorted(pack.risk_classes, key=lambda member: (member.rank, member.id))
+    )
+
+
+def mutable_attributes_of(pack: ResolvedPack) -> tuple[MutabilityView, ...]:
+    """Return, per event type, the attributes a pack declares a hypothetical may change.
+
+    ADR-0067. Whether an attribute is a lever is a claim about the domain, so it is read
+    from the pack and never derived here -- deriving it would be an unfalsifiable domain
+    judgement in engine code, the R-16 shape.
+
+    **Every event type appears, including those declaring no changeable attribute.** An
+    absent view and an empty one are different facts: the first says the type is not in this
+    pack, the second says the pack was asked and declared nothing, and a consumer that
+    dropped the empty rows could not tell them apart. This is the rule `actionability_of`
+    already keeps for `actionable: false`.
+
+    Sequenced by `event_type`, and each type's attributes sequenced by name, so two adapters
+    over one pack produce one value and a digest over it is stable (`CONVENTIONS.md` §11).
+    """
+    return tuple(
+        MutabilityView(
+            event_type=event_type.id,
+            mutable_attributes=tuple(
+                AttributeView(
+                    name=attribute.name,
+                    type_name=attribute.type.value,
+                    unit=attribute.unit,
+                    admissible_values=attribute.admissible_values,
+                    admissible_range=attribute.admissible_range,
+                )
+                for attribute in sorted(
+                    (declared for declared in event_type.required_attributes if declared.mutable),
+                    key=lambda declared: declared.name,
+                )
+            ),
+        )
+        for event_type in sorted(pack.event_types, key=lambda declared: declared.id)
     )

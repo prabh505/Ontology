@@ -104,6 +104,7 @@ def validate_structure(pack: ResolvedPack, locator: PackLocator) -> tuple[Diagno
     categories = {item.id for item in pack.event_categories}
     cost_classes = {item.id for item in pack.cost_classes}
     severity_classes = {item.id for item in pack.severity_classes}
+    risk_classes = {item.id for item in pack.risk_classes}
     entity_types = {item.id: item for item in pack.entity_types}
     event_types = {item.id: item for item in pack.event_types}
     external_types = {item.id for item in pack.external_event_types}
@@ -143,7 +144,13 @@ def validate_structure(pack: ResolvedPack, locator: PackLocator) -> tuple[Diagno
     for event_type in pack.event_types:
         findings.extend(
             _check_event_type(
-                event_type, categories, cost_classes, severity_classes, entity_types, locator
+                event_type,
+                categories,
+                cost_classes,
+                severity_classes,
+                risk_classes,
+                entity_types,
+                locator,
             )
         )
 
@@ -180,6 +187,7 @@ def validate_authored_uniqueness(pack: DomainPack, locator: PackLocator) -> tupl
         ("event_categories", [item.id for item in pack.event_categories]),
         ("cost_classes", [item.id for item in pack.cost_classes]),
         ("severity_classes", [item.id for item in pack.severity_classes]),
+        ("risk_classes", [item.id for item in pack.risk_classes]),
         ("entity_types", [item.id for item in pack.entity_types]),
         ("relationship_types", [item.id for item in pack.relationship_types]),
         ("event_types", [item.id for item in pack.event_types]),
@@ -354,6 +362,7 @@ def _check_event_type(
     categories: set[str],
     cost_classes: set[str],
     severity_classes: set[str],
+    risk_classes: set[str],
     entity_types: dict[str, EntityTypeSpec],
     locator: PackLocator,
 ) -> list[Diagnostic]:
@@ -424,6 +433,20 @@ def _check_event_type(
                 "ONT-E-UNKNOWN-COST-CLASS",
                 (*base, "actionability", "cost_class"),
                 f"'{cost_class}' is not a declared cost class.",
+            )
+        )
+    # ADR-0073. An ABSENT risk_class is legitimate and is not checked here -- it is reported
+    # as NOT_DECLARED by the consumer. A PRESENT one that names nothing is a dangling
+    # reference, and a dangling ordinal would resolve to no rank and rank the type nowhere
+    # while looking declared, which is the quietest of the two failures.
+    risk_class = event_type.actionability.risk_class
+    if risk_class is not None and risk_class not in risk_classes:
+        findings.append(
+            _finding(
+                locator,
+                "ONT-E-UNKNOWN-RISK-CLASS",
+                (*base, "actionability", "risk_class"),
+                f"'{risk_class}' is not a declared risk class.",
             )
         )
 

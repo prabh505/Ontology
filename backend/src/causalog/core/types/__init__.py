@@ -3,6 +3,7 @@
 LAW-EVENT: these are the only things the reasoning core computes over.
 """
 
+from causalog.core.types.candidate_edge import CandidateEdge
 from causalog.core.types.causal_edge import (
     AmplifyingCause,
     CausalEdge,
@@ -24,6 +25,7 @@ from causalog.core.types.transition import Transition
 
 __all__ = [
     "AmplifyingCause",
+    "CandidateEdge",
     "CausalEdge",
     "CausalEdgeKind",
     "CausalEdgePayload",

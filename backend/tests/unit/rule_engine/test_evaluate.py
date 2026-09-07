@@ -383,3 +383,62 @@ def test_the_violation_count_is_exact_not_a_sample() -> None:
 
     assert result.firings == ()
     assert result.statistics.temporal_violations_refused == 1
+
+
+# ---------------------------------------------------------------------------
+# Regression: an UNKNOWN-precision event in a matched bucket (DEF, found by module 9)
+# ---------------------------------------------------------------------------
+
+
+def test_an_unplaced_event_in_a_matched_bucket_does_not_crash_the_index() -> None:
+    """`admissible_slice` claimed this case worked for months, and it raised instead.
+
+    `index.admissible_slice`'s docstring has always said that an `UNKNOWN`-precision event
+    gives its bucket an unbounded `max_span`, "so the lower cut degenerates to zero and that
+    bucket is scanned from its start". Nothing executed that path: no test placed an unplaced
+    event into a bucket a rule matched on, and `cause_earliest - span` raised `OverflowError`
+    on `datetime.min` minus the whole representable range.
+
+    It surfaced when module 9 became the rule engine's first consumer over the reference
+    dataset, which carries such events. Fixed by `_saturating_shift`; pinned here so the
+    documented behaviour is now the tested behaviour.
+
+    This test fails before the fix with `OverflowError: date value out of range`.
+    """
+    from causalog.core.provenance import ProvenanceClass
+    from causalog.core.temporal import (
+        UNKNOWN_EARLIEST,
+        UNKNOWN_LATEST,
+        Precision,
+        TimeInterval,
+    )
+    from causalog.rule_engine.facts import FactSet
+    from tests.fixtures.facts import entity, evidence_record, interval
+    from tests.fixtures.facts import event as build_event
+    from tests.fixtures.rules import PARTICIPANT
+
+    citation = evidence_record("fixture/unplaced")
+    subject = entity("subject-a", PARTICIPANT, citation=citation)
+    unplaced = TimeInterval(
+        t_earliest=UNKNOWN_EARLIEST,
+        t_latest=UNKNOWN_LATEST,
+        precision=Precision.UNKNOWN,
+        provenance=ProvenanceClass.ASSUMED,
+        source="fixture: the source recorded no instant",
+    )
+    # The unplaced event must be the CONSEQUENT. `admissible_slice` bisects the consequent
+    # bucket, and it is that bucket's `max_span` -- the whole representable range, once it
+    # holds an unbounded interval -- that made the subtraction overflow. An unplaced
+    # ANTECEDENT does not reproduce it: the span it is shifted by comes from the other
+    # bucket, which is placed and narrow.
+    first = build_event(STAGE_ONE, interval(0), citation=citation, participants=(subject,))
+    second = build_event(STAGE_TWO, unplaced, citation=citation, participants=(subject,))
+
+    result = evaluate(pack(rule()), FactSet.of(events=(first, second)))
+
+    # The pair is retained and flagged rather than dropped: the data never placed the cause,
+    # which is a finding about the dataset and blocks promotion, not a reason to discard.
+    assert len(result.firings) == 1
+    assert result.firings[0].temporal_verdict is TemporalVerdict.UNDETERMINED
+    assert result.firings[0].temporally_unverifiable is True
+    assert result.statistics.unverifiable_firings == 1

@@ -94,12 +94,38 @@ class IdentifierPrefix(str, Enum):
     TRANSITION = "trn"
     CANDIDATE_EDGE = "edg"
     EVIDENCE_RECORD = "evd"
+    #: Added additively for module 9 (contracts.md 1.4.0), as ONTOLOGY, MAPPING and
+    #: TIMELINE were before it. `EvidenceItem` carried a free-form identifier because
+    #: nothing had yet needed to MINT one; module 9 mints thousands, and an
+    #: unaddressed item is one a rerun cannot reproduce. No existing recipe moves.
+    EVIDENCE_ITEM = "evi"
     SIMULATED_WORLD = "sim"
     RUN = "run"
     ONTOLOGY = "ont"
     MAPPING = "map"
     TIMELINE = "tml"
     RULE_PACK = "rul"
+    #: Added additively for modules 11 and 12 and the pattern miner (contracts.md 1.5.0),
+    #: as EVIDENCE_ITEM, ONTOLOGY, MAPPING and TIMELINE were before them. Each names an
+    #: artifact that a rerun must reproduce byte-identically: a propagation report over one
+    #: seed, a ranking over one outcome, and a structural pattern found across the whole
+    #: run. No existing address recipe moves.
+    PROPAGATION = "prp"
+    ROOT_CAUSE = "rca"
+    PATTERN = "pat"
+    #: Added additively for module 13 (contracts.md 1.10.0), as PROPAGATION, ROOT_CAUSE and
+    #: PATTERN were before it. An intervention is the input a simulated world is addressed
+    #: BY, so it needs an address of its own: two runs handed the same change must produce
+    #: the same identifier, and a world whose input cannot be named cannot be reproduced.
+    #: No existing address recipe moves.
+    INTERVENTION = "itv"
+    #: Added additively for module 13 (contracts.md 1.10.0). A simulated world is addressed
+    #: `sim:digest(base_graph_id | mutations)` (`CONVENTIONS.md` §9) and until now no graph
+    #: had an address for that recipe's first half: `PromotedGraph` and `CausalGraph` are
+    #: both scoped to a `run_id`, and one run holds BOTH, so a run identifier cannot
+    #: distinguish the graph the engine states from the one it declined to state. Digesting
+    #: the graph's own links separates them. No existing address recipe moves.
+    CAUSAL_GRAPH = "cgr"
 
 
 def format_float(value: float) -> str:

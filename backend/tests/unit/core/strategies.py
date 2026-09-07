@@ -15,7 +15,13 @@ from datetime import UTC, datetime
 
 from hypothesis import strategies as st
 
-from causalog.core.aggregation import AGGREGATORS, aggregate
+from causalog.core.aggregation import (
+    AGGREGATOR_COMPONENT_NAMES,
+    AGGREGATORS,
+    DEFAULT_COMPONENT_WEIGHTS,
+    V2_COMPONENT_NAMES,
+    aggregate,
+)
 from causalog.core.identifiers import FLOAT_QUANTIZATION_PLACES
 from causalog.core.provenance import ProvenanceClass
 from causalog.core.temporal import (
@@ -61,14 +67,10 @@ PLACED_PRECISIONS = [
 ]
 
 #: The component names `weighted_mean_v1` declares a weight for (prd.md §49).
-WEIGHTED_COMPONENT_NAMES = [
-    "rule_support",
-    "temporal_support",
-    "historical_support",
-    "statistical_support",
-    "evidence_count",
-    "graph_connectivity",
-]
+WEIGHTED_COMPONENT_NAMES = sorted(DEFAULT_COMPONENT_WEIGHTS)
+
+#: The eight names `gated_weighted_mean_v1` requires (confidence_schema_version 2.0.0).
+GATED_COMPONENT_NAMES = sorted(V2_COMPONENT_NAMES)
 
 
 def tokens() -> st.SearchStrategy[str]:
@@ -160,10 +162,10 @@ def intervals() -> st.SearchStrategy[TimeInterval]:
 
 
 @st.composite
-def confidence_components(draw: st.DrawFn) -> ConfidenceComponent:
-    """Return one component drawn from the weighted component names."""
+def confidence_component(draw: st.DrawFn, component_name: str) -> ConfidenceComponent:
+    """Return one component under a caller-chosen name."""
     return ConfidenceComponent(
-        component_name=draw(st.sampled_from(WEIGHTED_COMPONENT_NAMES)),
+        component_name=component_name,
         value=draw(quantized_unit_floats()),
         provenance_class=draw(provenance_classes()),
         evidence_record_ids=tuple(
@@ -172,8 +174,20 @@ def confidence_components(draw: st.DrawFn) -> ConfidenceComponent:
     )
 
 
+@st.composite
+def confidence_components(draw: st.DrawFn) -> ConfidenceComponent:
+    """Return one component drawn from the weighted component names."""
+    return draw(confidence_component(draw(st.sampled_from(WEIGHTED_COMPONENT_NAMES))))
+
+
 def component_sets() -> st.SearchStrategy[list[ConfidenceComponent]]:
-    """Return a non-empty set of components with distinct names."""
+    """Return a non-empty set of components with distinct names.
+
+    Drawn from `weighted_mean_v1`'s six names, so a set from here is admissible to
+    `weighted_mean_v1` and to the name-agnostic `minimum_v1`. It is NOT admissible to
+    `gated_weighted_mean_v1`, which requires all eight of its own -- use
+    `component_sets_for` when the aggregator is itself generated.
+    """
     return st.lists(
         confidence_components(),
         min_size=1,
@@ -183,9 +197,48 @@ def component_sets() -> st.SearchStrategy[list[ConfidenceComponent]]:
 
 
 @st.composite
+def gated_component_sets(draw: st.DrawFn) -> list[ConfidenceComponent]:
+    """Return all eight components `gated_weighted_mean_v1` requires.
+
+    Complete rather than sampled, because that strategy refuses an incomplete vector by
+    design: the scorer that feeds it never omits a component, and a partial draw would be
+    testing a shape the system does not produce.
+    """
+    return [draw(confidence_component(name)) for name in GATED_COMPONENT_NAMES]
+
+
+def component_sets_for(aggregator_name: str) -> st.SearchStrategy[list[ConfidenceComponent]]:
+    """Return component sets this aggregator will actually accept.
+
+    The registry stopped being uniform when a second schema version landed, so a test that
+    draws an aggregator has to draw its components to match. `AGGREGATOR_COMPONENT_NAMES`
+    is the declaration this reads; discovering the answer by catching the refusal instead
+    would let the property pass for the wrong reason.
+    """
+    required = AGGREGATOR_COMPONENT_NAMES[aggregator_name]
+    if required is not None and required == V2_COMPONENT_NAMES:
+        return gated_component_sets()
+    return component_sets()
+
+
+@st.composite
+def aggregator_and_components(
+    draw: st.DrawFn,
+) -> tuple[str, list[ConfidenceComponent]]:
+    """Return a registered aggregator paired with a component set it accepts.
+
+    Drawn together rather than independently: the two are not independent any more, and
+    pairing them here keeps every generic aggregator property in one shape.
+    """
+    aggregator_name = draw(st.sampled_from(sorted(AGGREGATORS)))
+    return aggregator_name, draw(component_sets_for(aggregator_name))
+
+
+@st.composite
 def confidence_vectors(draw: st.DrawFn) -> ConfidenceVector:
     """Return a vector built through `aggregate`, which is the only sanctioned path."""
-    return aggregate(draw(component_sets()), draw(st.sampled_from(sorted(AGGREGATORS))))
+    aggregator_name = draw(st.sampled_from(sorted(AGGREGATORS)))
+    return aggregate(draw(component_sets_for(aggregator_name)), aggregator_name)
 
 
 @st.composite

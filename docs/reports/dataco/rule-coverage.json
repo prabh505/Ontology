@@ -200,9 +200,9 @@
   "event_types_declared": 20,
   "event_types_explained": 13,
   "ontology_pack": "dataco",
-  "rule_pack_hash": "rul:f4aeace1280015c4",
+  "rule_pack_hash": "rul:b02ea6399b720f81",
   "rule_pack_id": "dataco",
-  "rule_pack_version": "1.0.0",
+  "rule_pack_version": "1.6.0",
   "rules_by_knowledge_provenance": {
     "ASSUMPTION": 5,
     "DATASET_OBSERVATION": 4,

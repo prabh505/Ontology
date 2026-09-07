@@ -101,24 +101,125 @@ no `INFERRED` assertions.
 events, edges carry confidence, evidence, propagation weight, rule support, and statistical
 support (prd.md §25).
 **NOT.** Not a proven causal structure (prd.md §16). Not a Bayesian network. Not
-necessarily acyclic — feedback loops are expected and are a feature (prd.md §31).
-**Where.** Confidence Scorer `[planned]`; stored as the Neo4j projection (ADR-0001).
+necessarily acyclic — feedback loops are expected and are a feature (prd.md §31). **Not
+ranked**: its edges are sequenced canonically, never by score, because ranking is module 11's.
+**Where.** Confidence Scorer, `causal_engine/confidence_scorer` (ADR-0052); stored as the
+Neo4j projection (ADR-0001). One `Scored Edge` per `(source, target, edge_kind)` — module 9's
+parallel candidates are fused, because `CausalEdge.address` omits `generator_id`.
 
 ### Candidate Edge
 **Definition.** A hypothesized causal link between two events, generated before scoring,
 from temporal proximity, business rules, shared entities, shared identifiers, historical
-frequency, ontology, or statistical association (prd.md §27).
-**NOT.** Not a causal claim. Not yet confidence-scored. Its existence asserts only "worth
+frequency, ontology, or statistical association (prd.md §27). Realised as
+`causalog.core.types.CandidateEdge` (ADR-0048), which **carries no confidence field at all**
+— "generation never scores" is enforced by the type rather than by convention.
+**NOT.** Not a causal claim. Not yet confidence-scored. Not a `Causal Edge`: that is module
+10's artifact and it requires a `Confidence Vector`. Its existence asserts only "worth
 evaluating".
-**Where.** Candidate Cause Generator `[planned]`.
+**Where.** Candidate Cause Generator, `causal_engine/candidate_cause_generator`.
+
+### Candidate Graph
+**Definition.** The multigraph of `Candidate Edge` values one run produced: parallel edges
+between the same pair of events are retained separately, one per generator, each with its
+own evidence (prd.md §27, ADR-0048). Keyed
+`(source_event_id, target_event_id, edge_kind, generator_id)`.
+**NOT.** Not the `Causal Graph` — nothing here is scored or ranked. Not deduplicated: two
+generators reaching one pair by different reasoning is the finding, not a collision.
+**Where.** Candidate Cause Generator.
+
+### Proximity Window
+**Definition.** A pack-declared separation, in whole seconds with per-end inclusivity, within
+which a sequenced event-type pair is admitted as a hypothesis (ADR-0049). Declared in
+`rule_engine/<domain>/rules.yaml` under `candidate_generation.proximity_windows`, each with a
+required `rationale` and `evidence_strength`.
+**NOT.** Not a precedence claim — precedence is `core.temporal.verdict`'s answer and no
+declared width can override it. Not calibrated: the DataCo widths are authored, bounded by
+what the pack already declares, and unvalidated (risk R-16).
+**Where.** Rule pack DSL; read by the Candidate Cause Generator.
+
+### Possible Mediation
+**Definition.** A flag recording that candidates `X→Z`, `X→Y` and `Y→Z` all exist, so the
+direct `X→Z` claim may be wholly or partly carried through Y (ADR-0051).
+**NOT.** Not a finding that mediation occurred, and not grounds for removing or
+down-weighting the edge. Nothing in V1 resolves it.
+**Where.** Candidate Cause Generator, as a separate `ConfoundingFlag` artifact.
+
+### Possible Common Cause
+**Definition.** A flag recording that candidates `X→Y`, `X→Z` and `Y→Z` all exist, so the
+`Y→Z` association may be explained by the shared parent X rather than by any effect of Y on
+Z (ADR-0051).
+**NOT.** Not a finding of confounding. **And its absence is not evidence of no confounding**
+— an unobserved common cause leaves no shape in a graph built from observed events, which is
+exactly the class risk R-05 names.
+**Where.** Candidate Cause Generator, as a separate `ConfoundingFlag` artifact.
 
 ### Confidence Vector
 **Definition.** The decomposed, named-component confidence attached to an inferred edge or
-recommendation: overall, rule support, historical support, temporal support, statistical
-support, graph connectivity, evidence count (prd.md §49; LAW-EVIDENCE).
-**NOT.** Not a probability. Not a bare float — a bare float is a defect. Not calibrated
-against ground truth; no causal ground truth exists in V1 (ADR-0003).
-**Where.** Confidence Scorer `[planned]`.
+recommendation (prd.md §49; LAW-EVIDENCE). **Eight** components at
+`confidence_schema_version` 2.0.0: the six prd.md §49 names — rule support, historical
+support, temporal support, statistical support, graph connectivity, evidence count — plus
+`evidence_diversity` and `contradiction_freedom` (ADR-0052). Six are addends; two are `Gate
+Component`s. Every one is emitted on every edge, always.
+**NOT.** Not a probability. Not a bare float — a bare float is a defect. **Not calibrated
+against ground truth**: no causal ground truth exists in this repository, so the scores are
+internally consistent and nothing more (OQ-024). Not a set that may be short a component —
+an absent measurement is emitted at zero and flagged, never omitted.
+**Where.** Confidence Scorer, `causal_engine/confidence_scorer`.
+
+### Gate Component
+**Definition.** A confidence component that **caps** the scalar rather than contributing to
+the weighted sum. Two of the eight are gates: `temporal_support` and
+`contradiction_freedom`. Each maps through a piecewise-linear, non-decreasing ceiling, and
+the scalar is the minimum of the addend mean and both ceilings (ADR-0052).
+**Why.** A claim that A caused B without knowing A came first is not a weak causal claim; it
+is not a causal claim. A gate cannot be outvoted by enough correlation, which an addend can.
+**NOT.** Not a veto — a gate lowers a ceiling, it does not delete an edge. Not a penalty
+subtracted from the total: every component still rises with support, which is what keeps the
+aggregation monotone.
+**Where.** `core.aggregation.gated_weighted_mean_v1`.
+
+### Contradiction Freedom
+**Definition.** The component scoring the **absence** of counter-evidence against a claim:
+1.0 means nothing on record argues against it, 0.0 means a great deal does. Drawn from four
+sources, weighted by how directly each bears: a `CONSTRAINT` prohibition on the pair, a rule
+conflict touching a supporting rule, the reverse pair also being proposed, and confounding
+flags naming the edge.
+**NOT.** **Not a contradiction *penalty*, despite scoring the same thing** — it is inverted
+deliberately, so that every component rises with support and the aggregation stays monotone.
+A HIGH value means LITTLE counter-evidence. Not support: a claim nothing argues against still
+needs evidence *for* it. Not a confounding resolution — a flag marks a structure that could
+explain the association away, and nothing at V1 resolves one (`CONTEXT.md` R-05).
+**Where.** Confidence Scorer.
+
+### Evidence Diversity
+**Definition.** How many **independent** lines of reasoning support a claim — distinct
+evidence kinds and distinct generators — as opposed to how many justifications there are,
+which is `evidence_count`. Normalized against what the run could actually reach.
+**NOT.** Not volume: ten items of one kind score zero here and score well on
+`evidence_count`. Not statistical independence — two generators can rest on the same
+underlying coincidence in the data, and nothing detects that.
+**Where.** Confidence Scorer. Computable only because module 9 keeps parallel candidates
+apart rather than merging them (ADR-0050).
+
+### Insufficient Evidence
+**Definition.** The outcome assigned when fewer components carried real, non-missing support
+than the rule pack requires. Such an edge **still carries a full confidence vector** —
+LAW-EVIDENCE is not waivable — but it is given **no band** and is never promoted to
+`INFERRED`.
+**NOT.** **Not a low confidence score.** "We did not measure enough to say" and "we measured,
+and the support is weak" are different findings, and showing the first as the second presents
+a gap as a measurement. The same distinction module 9 draws between `NOT_RUNNABLE` and a
+generator that ran and found nothing.
+**Where.** Confidence Scorer; the floor is declared per pack (ADR-0053).
+
+### Confidence Band
+**Definition.** A published, plain-language reading of a scalar — for example "strong
+evidence", "suggestive", "weak — inspect before acting". The threshold **and** the wording are
+declared in the rule pack's `confidence_scoring.confidence_bands` (ADR-0053).
+**NOT.** Not engine or UI policy: a boundary written into a component is one no reviewer can
+find, no test can pin, and two screens can silently disagree about. Not invented when absent
+— a pack declaring no bands gets no labels, and the report says which knob is missing.
+**Where.** `rule_engine/<domain>/rules.yaml`; applied by the Confidence Scorer.
 
 ### Evidence Record
 **Definition.** An immutable record of an observation that supports an assertion, linking
@@ -170,19 +271,153 @@ shapes and must not be summarized by a single number.
 **Where.** Propagation Analyzer `[planned]`.
 
 ### Feedback Loop
-**Definition.** A cycle in the causal graph where downstream effects reinforce an upstream
-cause (prd.md §31).
-**NOT.** Not a bug in the graph. Not a data error. Detecting these is a product
-requirement, which is why the causal graph is not constrained to be acyclic.
-**Where.** Propagation Analyzer `[planned]`.
+**Definition.** A cycle **over event types, across process instances**, in which downstream
+effects reinforce an upstream cause (prd.md §31). Detected only when every link in the
+circuit has temporally sound, promoted support and the supporting events span more than one
+process instance.
+**NOT.** Not a bug in the graph, and not a data error — detecting these is a product
+requirement, which is why the causal graph is not constrained to be acyclic. **Not a cycle
+over event instances**: a `CERTAIN` verdict is a strict precedence relation and strict
+precedence admits no cycle, so an all-`CERTAIN` circuit over instances is arithmetically
+impossible and every instance-level cycle is a [Temporal Artifact Circuit](#temporal-artifact-circuit).
+**Where.** Causal Graph Builder `causal_engine/causal_graph_builder/cycles.py`.
+
+### Temporal Artifact Circuit
+**Definition.** A cycle in the causal graph at least one of whose links has no temporally
+sound support — every claim behind it is `UNDETERMINED` or rests on an event the source
+never placed in time. The circuit closes *because* precedence could not be resolved.
+**NOT.** Not a feedback loop, and never reported as one. It is a statement about the
+source's timestamp granularity, not about the domain, and it is rendered in its own section
+of the Graph Quality Report so that no reader can act on it as a finding.
+**Where.** Causal Graph Builder.
+
+### Loop Gain
+**Definition.** The product of the propagation weights around a detected feedback loop,
+multiplied by the declared multiplier of any modifier member. Above 1.0 is reinforcing.
+**NOT.** Not a test for reinforcement on its own. Propagation weights are normalized shares
+in `[0, 1]`, so a product of them **cannot exceed 1.0**; only an amplifying member's
+multiplier can lift a gain above one. Read it as a ranking between loops.
+**Where.** Causal Graph Builder.
+
+### Weakest Link
+**Definition.** The member of a genuine feedback loop with the lowest propagation weight —
+the cheapest place to break the circuit *in propagation terms*.
+**NOT.** Not the cheapest intervention. Real intervention cost is the ontology-supplied
+`CostModel` and is module 14's, not this number's. Never named for a circuit the engine does
+not assert, because naming an intervention point on a data artifact invites acting on one.
+**Where.** Causal Graph Builder.
+
+### Promotion
+**Definition.** The assignment of provenance `INFERRED` to a scored causal edge, under a
+per-edge-kind threshold declared in the rule pack's `graph_construction` namespace. The
+moment the engine begins to assert a claim rather than merely hold it (ADR-0054).
+**NOT.** Not scoring — module 10 measures, this decides. Not reversible in place: promotion
+is a revision producing a new version, never an edit. Never possible for a claim whose
+LAW-TIME verdict is not `CERTAIN`, whatever its score.
+**Where.** Causal Graph Builder `causal_engine/causal_graph_builder/policy.py`, and nowhere
+else in the engine.
+
+### Demotion
+**Definition.** The record of a scored claim the engine considered and did not assert,
+carrying a closed-set reason, a plain-language detail, and the claim's full lineage
+including its whole confidence vector.
+**NOT.** Not a deletion, and not a judgement that the claim is false. A demotion for
+`NO_THRESHOLD_DECLARED` is a statement about the *pack*; one for `TEMPORALLY_UNVERIFIABLE`
+is a statement about the *source*; only `BELOW_KIND_THRESHOLD` is about the claim. The
+reasons are never summed into a single "rejected" count.
+**Where.** Causal Graph Builder.
+
+### Stated View
+**Definition.** The subset of scored claims the engine is willing to assert — the promoted
+edges of one run, published beside the rejection ledger of everything it declined.
+**NOT.** Not the truth, and not a closed world. A cause absent from the stated view was not
+ruled out: it was never proposed, never measured, or never cleared. The graph asserts what
+it contains and nothing about what it omits.
+**Where.** Causal Graph Builder, `PromotedGraph`.
+
+### Orphan Effect
+**Definition.** An event type with no promoted incoming edge — an outcome the engine offers
+no account of.
+**NOT.** Not evidence that the outcome has no cause. A coverage gap, reported as one, with
+"nothing was ever proposed" kept distinct from "proposals were made and fell short".
+**Where.** Causal Graph Builder, `GraphQualityReport`.
+
+### Joint Cause Group
+**Definition.** A set of two or more contributing causes that *jointly* produce one effect,
+none sufficient alone (prd.md §26). Promoted all-or-nothing.
+**NOT.** Not N independent edges, and the difference is not cosmetic: over an independent
+edge, "what if this cause were removed" answers "the effect does not occur"; over one member
+of a joint group the honest answer is "the effect may still occur, because the others
+remain". Promoting a subset tells every downstream consumer the first answer.
+**Where.** Causal Graph Builder; `ContributingCause` payload in `core/types/causal_edge.py`.
 
 ### Simulated World
-**Definition.** A derived copy of the causal graph with one or more mutations applied, used
-to evaluate a hypothetical. All assertions in it carry provenance `SIMULATED`
+**Definition.** A derived copy of the causal graph with one or more interventions applied,
+used to evaluate a hypothetical. All assertions in it carry provenance `SIMULATED`
 (prd.md §33).
 **NOT.** Not a write to history — prd.md §33 requires that historical records are never
-modified. Not a forecast of the future.
-**Where.** Counterfactual Simulator `[planned]`.
+modified. Not a forecast of the future. **Not a container of historical types:** it holds
+`SimulatedEvent` and `SimulatedInstant` and never `Event` or `TimeInterval`, so prd.md §37's
+non-conflation holds at the type level rather than by a provenance field a consumer must
+remember to read (ADR-0068).
+**Where.** Counterfactual Simulator, `world.py`.
+
+### Intervention Specification
+**Definition.** One of five typed changes a hypothetical may express — shift an occurrence's
+timing, remove one, insert one, change a declared changeable attribute, or change a
+participant's state — addressed by content, and validated against the ontology before
+anything is simulated (ADR-0066).
+**NOT.** Not a free-form mutation. Not an `Intervention` in prd.md §32's sense: that is a
+*recommendation* the Intervention Optimizer produces, with a cost and a benefit. This is the
+input to a simulation, and it carries neither.
+**Where.** Counterfactual Simulator, `intervention.py`.
+
+### Rejected Intervention
+**Definition.** A proposed change the engine refused before simulating anything, carrying the
+declaration it was checked against and why it failed.
+**NOT.** Not an error path. It is an artifact of equal standing to the world that WAS
+simulated, on the Causal Graph Builder's rejection-ledger precedent (ADR-0054): a simulator
+that reported only what it accepted would be asserting a conclusion while withholding the
+alternatives. `DECLARATION_ABSENT` is kept distinct from every reason meaning "checked and
+refused" — the first says the pack was never asked.
+**Where.** Counterfactual Simulator, `intervention.py`.
+
+### Support Envelope
+**Definition.** For one quantity a hypothetical moves: the range the run actually witnessed,
+the value the change asks for, the count the range was measured over, and the distance
+between them against the pack's declared tolerance (ADR-0070).
+**NOT.** Not the ontology's `admissible_range`, which is what the DOMAIN declares possible.
+The two are deliberately in different places, because a value can be entirely possible and
+entirely outside anything the data contains — and that is exactly the case an extrapolation
+verdict exists to name. **Not a confidence interval and not calibration.**
+**Where.** Counterfactual Simulator, `validity.py`.
+
+### Extrapolation
+**Definition.** A verdict, returned **instead of** a simulated figure, when a hypothetical
+asks the graph about a region beyond the range the run witnessed plus its declared tolerance.
+**NOT.** Not a warning printed beside a number. The verdict REPLACES the magnitude in the
+rendered table, because a number a reader can copy will be copied and a caveat above a table
+does not survive a screenshot. Not the same as `NOT_ASSESSABLE`, which says the data never
+spoke to the question at all.
+**Where.** Counterfactual Simulator, `ValidityVerdict`.
+
+### Sensitivity Sweep
+**Definition.** Recomputing a simulated outcome under each perturbation the pack declares, to
+see whether the answer survives a change in an assumption the data cannot adjudicate.
+**NOT.** Not a probability distribution. An absent perturbation set means **absent, not
+stable** — the report says so rather than reporting that nothing moved.
+**Where.** Counterfactual Simulator, `validity.py`.
+
+### Simulated Instant
+**Definition.** When something happens in a hypothetical world: two bounds, the precision
+carried from the interval it derives from, the locator of that interval, and the signed shift
+that produced it. Always `SIMULATED`.
+**NOT.** Not a `TimeInterval`, and not convertible to one. `TIMESTAMP_PROVENANCE_CLASSES`
+excludes `SIMULATED` and the frozen type was not widened to admit it: a simulated time
+wearing the observed type would be prd.md §37's conflation at the level where it is hardest
+to see (ADR-0068). Never narrows precision — a hypothetical may move an instant and may not
+make the source more precise about it than the source was.
+**Where.** `core/perturbation.py`.
 
 ### Validation Gate
 **Definition.** The checklist a module must pass, with recorded evidence, before its status
@@ -219,6 +454,33 @@ and could not separate them; *temporally unverifiable* means the data never plac
 them. Not a silent pass — such an edge is retained, reported, and barred from promotion to
 `INFERRED`.
 **Where.** `core/types/causal_edge.py`; stamped by `CausalEdge.between`.
+
+### Derived Precedence
+**Definition.** A precedence that holds by ARITHMETIC rather than by observation, because the
+source computed the later instant from the earlier one — column B equals column A plus a
+recorded count. Measured, not assumed: a mapping declares a `temporal_derivation_check` and
+module 1 tests it over every evaluable row, reporting an agreement rate and a residual
+histogram (ADR-0057). Where confirmed, the pair's `temporal_support` is capped at the value
+the rule pack declares in `derived_precedence_temporal_support`.
+**NOT.** Not `UNDETERMINED`, and worth strictly less. An `UNDETERMINED` pair was placed twice
+and could not be separated — genuine information the engine could not resolve; a derived pair
+was placed once and the second instant is the first restated. Not a rejection either: the
+precedence holds. What it lacks is any evidence that the precedence was *observed*. Not
+inferred from a column's shape or name — an unmeasured suspicion produces nothing.
+**Where.** Measured in `ingestion/data_adapter`; carried as `core.precedence.DerivedPrecedence`;
+read by `confidence_scorer/scorers/temporal_support.py`.
+
+### Rejected Proposal
+**Definition.** One claim the gate or the per-effect cap refused, retained with the effect
+event it was refused FOR — so "what was rejected for this outcome, and why?" is answerable at
+instance level rather than only per generator (ADR-0058). Records are held under a declared
+bound (`SAMPLED_REJECTIONS`); the per-effect COUNTS are complete regardless.
+**NOT.** Not a `Candidate Edge` — nothing was constructed. Not complete coverage of every
+rejection reason: `GENERATOR_NOT_RUNNABLE` is recorded when a generator never ran, so there
+was no proposal and no effect to name, and it stays a per-generator count. Not a judgement
+about the outcome — three of the four reasons are properties of the data and one is a bound
+the run declared on itself.
+**Where.** `causal_engine/candidate_cause_generator/graph.py`; populated in `generate.py`.
 
 ### Causal Edge types (prd.md §26)
 
@@ -709,6 +971,75 @@ which makes two events on one date OVERLAP, so `core.temporal.verdict` returns
 
 ---
 
+### Graph Standing
+Which graph a traversal walked, and therefore whether the engine stands behind what it
+found. `STATED` walks the promoted graph and its findings are the engine's. **`UNPROMOTED_DIAGNOSTIC`
+walks the scored graph before promotion and its findings are disowned** — refused `INFERRED`
+by a validator, printed under a fixed notice, written to separate files, and refused as input
+by everything downstream. A required field with no default on every artifact modules 11 and 12
+and the pattern miner produce (ADR-0059).
+
+### Consequence Set
+The set of nodes reachable downstream of a seed, keyed by event identifier and validated
+sorted and unique at construction. **The unit of attribution.** A consequence reachable four
+ways is one consequence and contributes its magnitude once; the routes are reported as
+structure (`route_count`) and multiply nothing (ADR-0061).
+
+### Path Composition
+How the per-link confidences along a chain compose into one belief about the chain.
+Distinct from **aggregation**, which rolls one claim's components into one scalar. The
+composition function is named on every artifact, as an aggregation is. `weakest_link_v1` (the
+minimum) is the default; `independent_product_v1` is registered beside it and reported in its
+own column, never blended (ADR-0060).
+
+### Plateau
+Several candidates carrying one identical composed value or sequencing value, so the engine
+cannot separate them. **A plateau is not a ranking.** It is reported as a plateau and the tie
+is not broken: any sequence imposed on tied candidates is arbitrary, and breaking it on
+earliness would reintroduce the blend ADR-0008 forbids. On the measured slice 310 scored links
+sit at exactly 0.400000, so plateaus are common rather than exceptional.
+
+### Counterfactual-Lite
+The purely structural question "what does the graph say stops occurring if this node is
+removed", answered by re-running reachability with the node deleted and diffing —
+`reachable(seed) \ reachable(seed, excluding=n)`. **A re-reachability diff, not a subtraction:**
+a consequence with another surviving ancestor does not disappear, which is what makes it
+correct on a diamond. Not a causal effect estimate; module 13's simulation is a different and
+larger claim (ADR-0061).
+
+**How module 13's claim is larger.** Counterfactual-lite answers one question — what stops
+being reachable — and answers it over node removal alone. A simulation applies five typed
+changes, validates each against the ontology, propagates per edge KIND (a contributing cause
+removed reduces rather than eliminates), recomputes magnitudes through declared measurement
+trees, re-times what the source computed, and returns a validity assessment. Both are graph
+surgery over frozen links and neither identifies a causal effect; the second says more, and
+therefore has more to be wrong about, which is why it carries an envelope and a verdict and
+the first does not.
+
+### Eliminated vs Reduced
+| | **Eliminated** | **Reduced** |
+|---|---|---|
+| **Claim** | Nothing transmits into this consequence any more, so the graph says it would not have happened. | It still would have happened, and would have been smaller. |
+| **Established by** | Re-reachability over the graph. A fact about the graph's shape. | Arithmetic over the apportioned shares of the causes that stopped. |
+| **Typical cause** | The one link carrying it was removed. | One of several joint causes was removed and the others survive. |
+| **NOT** | **Not "the removed shares summed to one."** Shares summing to one under an apportionment is an arithmetic coincidence; nothing reaching a consequence is a fact. Reading the first as the second is how a partial removal comes to be reported as a prevention. | **Not "prevented."** |
+| **Where** | `WorldDiff.eliminated_event_ids` | `WorldDiff.reduced_event_ids` |
+
+> **The two are never summed and never merged into one headline.** This is the single most
+> common counterfactual error, and it is held apart by two accessors on a type rather than by
+> care taken at a call site.
+
+### Motif
+A recurring cause-type-to-effect-type shape in the event-TYPE projection, above a declared
+support threshold. Always reported with the number of **process instances it spans**, because
+one shape repeating inside a single instance is a local pathology and the same count across
+many instances is systemic, and one number cannot tell them apart (ADR-0064).
+
+### Chronic Bottleneck
+An event type sitting on many claims in the type projection. In-degree and out-degree are
+reported separately and **never summed**: a type consequence collects at and a type consequence
+originates from are different structures needing different responses (ADR-0064).
+
 ## 2. Disambiguation of overloaded terms
 
 ### 2.1 Cause vs Root Cause vs Trigger
@@ -811,3 +1142,73 @@ mapping instead of concluding the requirement was dropped.
 
 Distinct from `execution_id` (one pipeline execution, random, excluded from determinism
 comparisons) and from `run_id` (content-addressed, stable across reruns, included).
+
+---
+
+## Module 14 terms (ADR-0073 through ADR-0079)
+
+### `risk_class` — and how it differs from `severity_class`
+
+**The operational risk of TAKING an act**, declared per event type in the ontology pack as a
+member of the `risk_classes` ordinal vocabulary (ADR-0073). Provenance is pinned to `ASSUMED`:
+no observation in any dataset establishes what taking an act risks (R-25).
+
+**`severity_class` is not this and must never be substituted for it.** Severity describes the
+occurrence being acted ON; risk describes the ACT. A cheap act against a critical occurrence
+can be entirely safe to take, and an expensive act against a minor one can still destabilise
+the process around it. Conflating them would make prd.md §50's fourth objective a restatement
+of a quantity the ranking already reads.
+
+**Absent is not `NEGLIGIBLE`.** An actionable type may omit `risk_class`; it is then reported
+`NOT_DECLARED` and costs the candidate its whole risk term in the scalarization. An actionable
+type may NOT omit `cost_class`, because an absent cost would rank it as free.
+
+### Cut set
+
+A set of acts whose removal disconnects the largest number of **(source, outcome) pairs**.
+Pairs, never routes: two routes between one source and one outcome are one chain, because they
+are one thing an operator cares about (ADR-0076, ADR-0061's ruling in a new place).
+
+A cut set is **`EXACT`** — enumerated, provably minimal — or
+**`GREEDY_NOT_PROVEN_MINIMAL`**, which is often minimal and is never claimed to be.
+
+### Portfolio benefit, and overlap loss
+
+The benefit of a SET of acts, obtained by simulating the whole set in one call to module 13
+(ADR-0077). **Never the sum of its members' benefits.** `overlap_loss` is the gap between the
+naive sum and the joint figure, published so the non-additivity is visible rather than merely
+corrected — and withheld, with a reason, when the members do not interact, because the two
+totals are then not comparable.
+
+### Desirability — and why it is not called a score
+
+The scalarized trade-off across benefit, cost, belief and operational risk, produced by a
+**named** function in `core.scalarization` under weights the rule pack declares (ADR-0078).
+prd.md §50 calls it an "impact score"; this glossary does not, because a score reads as a
+property of the act and this is a property of one weighting **of** the act.
+
+Always published beside `on_pareto_frontier`, which is weight-independent and therefore the
+stronger claim: nothing else beats this act on all four objectives at once.
+
+### Belief floor — a gate, not a term
+
+`recommendation.minimum_belief_to_publish`. A candidate below it is **withheld** to the ledger
+naming the threshold, never published low down a ranked list. A weight lets a large benefit buy
+its way past a weak belief; a floor does not, and a ranked list is read as a list of things to
+do where position outweighs any number printed beside it (ADR-0079, module 10's gated-component
+ruling one layer up).
+
+Named `belief` rather than `confidence` for the reason `core.ranking` names its own parameter
+`chain_scalar`: LAW-EVIDENCE reserves the second word for the decomposed vector, and
+`check_confidence_is_a_vector.py` refuses a float that borrows it.
+
+### Withheld recommendation
+
+A candidate that passed the actionability gate and was still not published. Of **equal
+standing** to the ranked list and published with it: what was nearly recommended, and why it
+was not, is frequently a sharper statement about a dataset than what was.
+
+It carries what was measured — benefit, cost, risk, coverage, belief — so a reader deciding
+whether a threshold is set correctly can see what it excluded. It carries **no** confidence
+vector, evidence chain, assumptions or justification, so it cannot be rendered as a
+recommendation or mistaken for one.

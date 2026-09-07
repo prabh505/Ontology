@@ -15,9 +15,9 @@ PY       := $(VENV)/bin/python
 PIP      := $(VENV)/bin/pip
 
 .DEFAULT_GOAL := help
-.PHONY: help setup doctor up down verify lint typecheck laws test test-fast bench import \
-        events rules migrate migrate-down migrate-status rebuild-graph verify-projection \
-        reset
+.PHONY: help setup doctor up down verify lint typecheck laws test test-fast bench import recommend \
+        events rules root-cause migrate migrate-down migrate-status rebuild-graph \
+        verify-projection reset
 
 help: ## Show this list
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -75,11 +75,11 @@ laws: ## The enforcement scripts alone -- each proves itself, then scans (DEF-00
 # DataCo pack exists, so this is a real scan today; the tolerance is here for a domain
 # onboarded before its rule pack is written (docs/ontology.md §4 step 10).
 	$(PY) scripts/check_rule_pack.py --dataset dataco --no-write || test $$? -eq 2
-# Exit 2 = NOT-YET-RUNNABLE while every reasoning package is scaffold, and the script
-# says so loudly. Tolerate exactly 2 -- NOT `-`, which would swallow exit 1 as well and
-# turn a real violation into a green run. Delete the guard at the P2 exit, when the
-# first reasoning module lands and the scan becomes a real one.
-	$(PY) scripts/check_metrics_are_declared.py || test $$? -eq 2
+# The exit-2 tolerance that stood here is GONE, as its own comment instructed: it was for
+# "while every reasoning package is scaffold", and the scan now covers 84 files across five
+# packages including modules 11 and 12. A tolerated exit code outlives its reason silently,
+# so it is removed in the commit that made it unnecessary rather than left to be found.
+	$(PY) scripts/check_metrics_are_declared.py
 	$(PY) scripts/export_ontology_schema.py --check
 
 typecheck: ## mypy --strict over the distribution, tsc --noEmit over the frontend
@@ -104,10 +104,36 @@ rules: ## Check a domain's rule pack against its ontology and write the coverage
 	@test -n "$(DATASET)" || (echo "usage: make rules DATASET=dataco" && exit 1)
 	$(PY) scripts/check_rule_pack.py --dataset "$(DATASET)"
 
+root-cause: ## Run modules 11 and 12 and the pattern miner; write both standings' reports
+	@test -n "$(DATASET)" || (echo "usage: make root-cause DATASET=dataco [ROWS=150]" && exit 1)
+	$(PY) scripts/analyze_root_causes.py --dataset "$(DATASET)" $(if $(ROWS),--rows "$(ROWS)")
+
+counterfactual: ## Run module 13 on prd.md §11's worked example; write both standings' reports
+	@test -n "$(DATASET)" || (echo "usage: make counterfactual DATASET=dataco [ROWS=150]" && exit 1)
+	$(PY) scripts/simulate_counterfactuals.py --dataset "$(DATASET)" $(if $(ROWS),--rows "$(ROWS)")
+
+recommend: ## Run module 14; write both standings' recommendation reports
+	@test -n "$(DATASET)" || (echo "usage: make recommend DATASET=dataco [ROWS=150]" && exit 1)
+	$(PY) scripts/recommend_interventions.py --dataset "$(DATASET)" $(if $(ROWS),--rows "$(ROWS)")
+
 bench: ## Measure the prd.md §55 performance targets
 	@echo "prd.md §55 targets: load <30s, graph <60s, root-cause <3s, counterfactual <5s, recommendation <5s"
 	$(PY) scripts/check_determinism.py || true
-	@echo "NOT-YET-RUNNABLE: benchmarks land with the orchestration pipeline (P1 exit)."
+# The root-cause budget is REAL as of modules 11 and 12. It is measured over a graph built
+# at the scale of the committed bounded run, which is 150 rows of 180,519 -- the test prints
+# that gap beside its number rather than letting the figure be read as a dataset-scale one
+# (OQ-023). `-s` is deliberate: a benchmark whose number nobody can read is one nobody reads.
+	cd backend && ../$(VENV)/bin/pytest tests/integration/test_root_cause_budget.py -q -s --no-cov
+# The counterfactual budget is REAL as of module 13, and is measured over a graph built at
+# the same slice scale for the same reason: the committed promoted graph has zero edges, so
+# a query over it would pass on having no work to do (R-22).
+	cd backend && ../$(VENV)/bin/pytest tests/integration/test_counterfactual_budget.py -q -s --no-cov
+# The recommendation budget is REAL as of module 14, at the same slice scale and with the
+# same caveat. It is the widest of the three: a recommendation run simulates once per
+# candidate and again per multi-node set, so the pack's declared caps are what keep it
+# inside the budget rather than an implementation detail -- the test prints them.
+	cd backend && ../$(VENV)/bin/pytest tests/integration/test_recommendation_budget.py -q -s --no-cov
+	@echo "STILL NOT-RUNNABLE: the load and graph budgets."
 
 # `make up` deliberately does NOT migrate. The PostgreSQL init directory applies *.sql
 # without writing the migration ledger, which leaves a schema that exists and a ledger that

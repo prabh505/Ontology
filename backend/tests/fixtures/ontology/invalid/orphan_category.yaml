@@ -1,6 +1,6 @@
 # INVALID FIXTURE -- An event type names a category the pack never declares.
 # Derived from tests/fixtures/ontology/valid_minimal.yaml with one defect.
-pack_schema_version: "1.0.0"
+pack_schema_version: "1.2.0"
 pack_id: minimal
 ontology_version: "1.0.0"
 description: The smallest pack that exercises every namespace.

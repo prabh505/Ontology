@@ -42,6 +42,7 @@ _NAMESPACES: tuple[str, ...] = (
     "event_categories",
     "cost_classes",
     "severity_classes",
+    "risk_classes",
     "entity_types",
     "relationship_types",
     "event_types",

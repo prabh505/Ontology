@@ -555,6 +555,10 @@ def _referenced_columns(mapping: SchemaMappingSpec) -> list[tuple[str, str]]:
         if check.plus_days_column is not None:
             references.append((address, check.plus_days_column))
     for temporal in mapping.temporal_bindings:
+        # NOT `core.precedence.temporal_binding_source`. That recipe carries a `mapping.`
+        # prefix and names an interval's provenance; this one is a coverage address and is
+        # matched against the addresses every other clause here builds. Unifying them would
+        # silently move every coverage address in the report.
         references.append((f"temporal_bindings[{temporal.column}]", temporal.column))
     for value_binding in mapping.value_bindings:
         references.append((f"value_bindings[{value_binding.column}]", value_binding.column))

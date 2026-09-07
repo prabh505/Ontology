@@ -29,9 +29,12 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from causalog.core.attribution import COMBINATION_OPERATORS
+from causalog.core.composition import PATH_COMPOSERS
 from causalog.core.errors import ContractViolationError, RuleConflictError
 from causalog.core.identifiers import IdentifierPrefix, digest
 from causalog.core.ontology_view import VocabularyView
+from causalog.core.ranking import RANKERS
 from causalog.core.serialization import to_canonical_json
 from causalog.rule_engine.diagnostics import Diagnostic, Severity, render
 from causalog.rule_engine.dsl import (
@@ -478,6 +481,9 @@ def inspect_rule_pack(
     else:
         findings.extend(_check_references(pack, vocabulary, pack_path))
 
+    findings.extend(_check_graph_construction(pack, vocabulary, pack_path))
+    findings.extend(_check_analysis_blocks(pack, pack_path))
+
     findings.append(
         Diagnostic(
             severity=Severity.NOT_RUNNABLE,
@@ -493,6 +499,221 @@ def inspect_rule_pack(
         )
     )
     return pack, tuple(findings)
+
+
+def _check_graph_construction(
+    pack: RulePackSpec, vocabulary: VocabularyView | None, file: Path | None
+) -> tuple[Diagnostic, ...]:
+    """Check the `graph_construction` block against the rest of the pack (ADR-0055).
+
+    Three findings, and one deliberate non-finding.
+
+    * A promotion threshold naming a band the pack never declared is an ERROR. It would
+      promote nothing, and a graph that is empty because of a typo looks exactly like a
+      graph that is empty because the data is weak -- which is the finding this whole
+      module exists to report honestly.
+    * A magnitude attribution naming an undeclared effect type is an ERROR when a
+      vocabulary is available to check it against.
+    * `confidence_scoring.promotion_band` is a WARNING: still parsed, no longer read.
+      Deliberately not an ERROR -- erroring would refuse every pack in this repository on
+      the commit that introduced its replacement, and a pack author would have to fix a
+      file before they could read why.
+
+    The non-finding: `measurement_id` is NOT checked. `VocabularyView` carries event,
+    entity and relationship types and no measurement ids (its own docstring lists what it
+    omits and why), so this loader cannot see whether the id exists. That is reported as
+    NOT_RUNNABLE rather than passed over, because an unperformed check that reads as a
+    passed one is DEF-0001.
+    """
+    findings: list[Diagnostic] = []
+    declared_bands = {band.name for band in pack.confidence_scoring.confidence_bands}
+    for entry in pack.graph_construction.promotion_thresholds:
+        if entry.minimum_band not in declared_bands:
+            findings.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="RUL-E-PROMOTION-BAND",
+                    message=(
+                        f"graph_construction promotes {entry.edge_kind} at band "
+                        f"{entry.minimum_band!r}, which confidence_scoring does not declare "
+                        f"(it declares {sorted(declared_bands) or 'none'}). A threshold "
+                        "pointing at a band nobody declared admits nothing, and the empty "
+                        "graph it produces is indistinguishable from an honest one."
+                    ),
+                    path=f"graph_construction.promotion_thresholds[{entry.edge_kind}]",
+                    file=file,
+                )
+            )
+    if vocabulary is not None:
+        for attribution in pack.graph_construction.magnitude_attributions:
+            if vocabulary.event_type(attribution.effect_event_type) is None:
+                findings.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="RUL-E-ATTRIBUTION-TYPE",
+                        message=(
+                            "graph_construction attributes a magnitude to effect type "
+                            f"{attribution.effect_event_type!r}, which the ontology pack "
+                            "does not declare."
+                        ),
+                        path=(
+                            "graph_construction.magnitude_attributions"
+                            f"[{attribution.effect_event_type}]"
+                        ),
+                        file=file,
+                    )
+                )
+    if pack.graph_construction.magnitude_attributions:
+        findings.append(
+            Diagnostic(
+                severity=Severity.NOT_RUNNABLE,
+                code="RUL-N-ATTRIBUTION-MEASUREMENT",
+                message=(
+                    "'every magnitude_attributions.measurement_id names a declared "
+                    "measurement' was NOT CHECKED. VocabularyView carries event, entity and "
+                    "relationship types and no measurement ids, so this loader cannot see "
+                    "them. An unresolvable id is reported by the Causal Graph Builder at "
+                    "attribution time, where the effect that lost its magnitude can be "
+                    "named."
+                ),
+                path="graph_construction.magnitude_attributions",
+                file=file,
+            )
+        )
+    if pack.confidence_scoring.promotion_band is not None:
+        findings.append(
+            Diagnostic(
+                severity=Severity.WARNING,
+                code="RUL-W-PROMOTION-BAND-DEPRECATED",
+                message=(
+                    "confidence_scoring.promotion_band is DEPRECATED at "
+                    "rule_pack_schema_version 1.3.0 and is no longer read. Promotion to "
+                    "INFERRED moved to graph_construction.promotion_thresholds, which "
+                    "declares a band per edge kind (ADR-0054, ADR-0055). This field is "
+                    "still parsed and still validated so that removing it is the author's "
+                    "edit rather than a silent change of meaning."
+                ),
+                path="confidence_scoring.promotion_band",
+                file=file,
+            )
+        )
+    return tuple(findings)
+
+
+def _check_analysis_blocks(pack: RulePackSpec, file: Path | None) -> tuple[Diagnostic, ...]:
+    """Check the schema-1.5.0 analysis blocks against the rest of the pack.
+
+    Three findings and two deliberate non-findings, following `_check_graph_construction`.
+
+    * A combination operator outside `causalog.core.attribution.COMBINATION_OPERATORS` is
+      an ERROR. The four omitted expression operators are not n-ary over an unordered set,
+      so admitting one would make a total depend on iteration sequence -- a determinism
+      defect that would surface as an unreproducible report rather than as an exception.
+    * A `path_confidence_composition` or `ranking_function` naming a function this
+      distribution does not register is an ERROR. Substituting a registered one would
+      produce an artifact whose recorded function misdescribes its own numbers, which is
+      the LAW-EVIDENCE defect `ConfidenceVector.aggregation` exists to prevent.
+    * A `minimum_chain_scalar` above every declared band floor is a WARNING: a floor no
+      chain can clear rejects everything, and an empty recommendation set produced that way
+      is indistinguishable from an honest one.
+
+    The non-findings, reported rather than passed over. `impact_aggregation.measurement_id`
+    is NOT checked, for the same reason `magnitude_attributions.measurement_id` is not:
+    `VocabularyView` carries no measurement ids. And a declared `maximum_depth` is not
+    checked against the graph's actual diameter, because the graph does not exist at load
+    time; reaching the bound is reported as truncation where the traversal runs.
+    """
+    findings: list[Diagnostic] = []
+    propagation = pack.propagation_analysis
+    for entry in propagation.impact_aggregation:
+        if entry.operator not in COMBINATION_OPERATORS:
+            findings.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="RUL-E-COMBINATION-OPERATOR",
+                    message=(
+                        f"propagation_analysis combines {entry.measurement_id} under "
+                        f"operator {entry.operator!r}, which is not one of "
+                        f"{sorted(COMBINATION_OPERATORS)}. The remaining expression "
+                        "operators are not n-ary over an unordered set, so a total built "
+                        "from one would depend on the sequence the consequences happened "
+                        "to be visited in."
+                    ),
+                    path=f"propagation_analysis.impact_aggregation[{entry.measurement_id}]",
+                    file=file,
+                )
+            )
+    if (
+        propagation.path_confidence_composition is not None
+        and propagation.path_confidence_composition not in PATH_COMPOSERS
+    ):
+        findings.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="RUL-E-PATH-COMPOSER",
+                message=(
+                    "propagation_analysis names path composition "
+                    f"{propagation.path_confidence_composition!r}, which this distribution "
+                    f"does not register (it registers {sorted(PATH_COMPOSERS)}). A pack "
+                    "chooses which named composition applies; it never supplies one, "
+                    "because a composition supplied per pack would make 'this chain "
+                    "composes to 0.4' mean two different things in two domains."
+                ),
+                path="propagation_analysis.path_confidence_composition",
+                file=file,
+            )
+        )
+    ranking = pack.root_cause_analysis
+    if ranking.ranking_function is not None and ranking.ranking_function not in RANKERS:
+        findings.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="RUL-E-RANKING-FUNCTION",
+                message=(
+                    f"root_cause_analysis names ranking function "
+                    f"{ranking.ranking_function!r}, which this distribution does not "
+                    f"register (it registers {sorted(RANKERS)})."
+                ),
+                path="root_cause_analysis.ranking_function",
+                file=file,
+            )
+        )
+    floors = [band.minimum_scalar for band in pack.confidence_scoring.confidence_bands]
+    if ranking.minimum_chain_scalar is not None and floors:  # noqa: SIM102
+        if ranking.minimum_chain_scalar > max(floors):
+            findings.append(
+                Diagnostic(
+                    severity=Severity.WARNING,
+                    code="RUL-W-CHAIN-FLOOR-UNREACHABLE",
+                    message=(
+                        "root_cause_analysis.minimum_chain_scalar sits above every "
+                        "declared band floor, so no chain can clear it and the recommended "
+                        "set is structurally empty. Reported as a warning rather than an "
+                        "error because a pack may deliberately recommend nothing while its "
+                        "evidence is thin -- but an empty set produced this way must not be "
+                        "mistaken for an empty set produced by the evidence."
+                    ),
+                    path="root_cause_analysis.minimum_chain_scalar",
+                    file=file,
+                )
+            )
+    if propagation.impact_aggregation:
+        findings.append(
+            Diagnostic(
+                severity=Severity.NOT_RUNNABLE,
+                code="RUL-N-AGGREGATION-MEASUREMENT",
+                message=(
+                    "'every impact_aggregation.measurement_id names a declared "
+                    "measurement' was NOT CHECKED. VocabularyView carries no measurement "
+                    "ids, so this loader cannot see them. An unresolvable id is reported by "
+                    "the Propagation Analyzer at attribution time, where the consequence "
+                    "that lost its magnitude can be named."
+                ),
+                path="propagation_analysis.impact_aggregation",
+                file=file,
+            )
+        )
+    return tuple(findings)
 
 
 def load_rule_pack(pack_path: Path, *, vocabulary: VocabularyView | None = None) -> LoadedRulePack:

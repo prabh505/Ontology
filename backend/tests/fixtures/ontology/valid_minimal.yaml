@@ -1,6 +1,6 @@
 # A minimal valid pack. Every file in `invalid/` is this pack with exactly one defect
 # introduced, so a test that fails names the defect rather than a difference in scaffolding.
-pack_schema_version: "1.0.0"
+pack_schema_version: "1.2.0"
 pack_id: minimal
 ontology_version: "1.0.0"
 description: The smallest pack that exercises every namespace.

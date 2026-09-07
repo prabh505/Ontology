@@ -11,13 +11,137 @@
 # evaluated against facts, and every rule here is DOMAIN_EXPERTISE or ASSUMPTION by
 # necessity -- a DATASET_OBSERVATION would be a claim about data that does not exist.
 
-rule_pack_schema_version: "1.0.0"
+rule_pack_schema_version: "1.7.0"
 rule_pack_id: hospital
-rule_pack_version: "1.0.0"
+rule_pack_version: "1.7.0"
 ontology_pack: hospital
 description: >-
   A minimal rule pack over the hospital ontology, exercising every rule kind against a
   vocabulary that shares no term with the logistics domain.
+
+# NO `candidate_generation` BLOCK, deliberately. This pack has no dataset behind it, so
+# a window width here would be a number nobody could justify. Omitting it exercises the
+# other half of the 1.1.0 contract: module 9 reports five generators as NOT_RUNNABLE and
+# names what each would need, rather than reporting a clean zero.
+# ---------------------------------------------------------------------------------------
+# CONFIDENCE SCORING (rule_pack_schema_version 1.2.0, ADR-0053)
+#
+# This pack exists to prove the engine is not DataCo-shaped (LAW-DOMAIN). Its numbers are
+# deliberately DIFFERENT from DataCo's, and deliberately more sceptical: no dataset stands
+# behind this pack at all, so every value here is an assumption exercising a bound.
+#
+# The band wording differs too, and that is the point of putting it in the pack. A
+# clinician and a supply-chain analyst do not want the same sentence about the same
+# scalar, and the engine has no business writing either one.
+# ---------------------------------------------------------------------------------------
+confidence_scoring:
+
+  # Higher than DataCo's 3.0. A weaker prior about what counts as an impressive
+  # association, because nothing here has been observed even once.
+  lift_reference: 4.0
+
+  # More sceptical of small samples than DataCo, for the same reason.
+  small_sample_prior_count: 30
+
+  evidence_count_saturation_k: 3
+
+  # Two hours rather than a day. A pack over clinical events would be recording minutes,
+  # and a scale borrowed from a shipping dataset would score every pair as tight.
+  temporal_reference_seconds: 7200
+
+  undetermined_temporal_support: 0.10
+
+  # 0.02, not DataCo's 0.10, and the gap is the point rather than a copy left unedited. This
+  # pack has no dataset behind it and declares no derivation checks, so nothing can confirm
+  # one and this knob should never fire. It is declared anyway -- and declared low -- so that
+  # if a source is ever attached and a derivation IS confirmed, an instant this domain's
+  # source computed for itself carries almost no weight. A clinical claim resting on a
+  # timestamp the record system back-filled is worth less here than a logistics one.
+  derived_precedence_temporal_support: 0.02
+
+  # Six rather than DataCo's five. A domain where acting on a wrong claim is expensive
+  # should demand more legs before it calls an edge scored at all -- here, an authored rule
+  # AND a computable base rate, not one or the other.
+  #
+  # Note that three of the eight components are properties of the claim's own evidence
+  # bundle and are always measurable, so any floor at or below three is an absent floor
+  # rather than a lenient one. The confidence report says so directly when it happens.
+  minimum_scored_components: 6
+
+  promotion_band: STRONG
+
+  confidence_bands:
+    - name: STRONG
+      minimum_scalar: 0.75
+      plain_language: >-
+        Strong evidence. Independent lines of support agree and precedence is
+        established. This is a statement about how well supported the association is, and
+        it is not a clinical finding.
+    - name: SUGGESTIVE
+      minimum_scalar: 0.50
+      plain_language: >-
+        Suggestive. Some support, with at least one weak leg. Treat as a question to ask,
+        never as an answer.
+    - name: WEAK
+      minimum_scalar: 0.0
+      plain_language: >-
+        Weak -- inspect before acting. Read the component breakdown beside this label; it
+        names which leg failed.
+
+
+# ---------------------------------------------------------------------------------------
+# GRAPH CONSTRUCTION (rule_pack_schema_version 1.3.0, ADR-0055)
+#
+# Every number here differs from the DataCo pack's, and that divergence is the point: it is
+# the LAW-DOMAIN check the config/code split exists to make possible. If these two packs
+# agreed on everything, a number would be sitting in the pack that actually belongs in
+# engine code.
+# ---------------------------------------------------------------------------------------
+graph_construction:
+
+  promotion_thresholds:
+    - edge_kind: DIRECT
+      minimum_band: STRONG
+      rationale: >-
+        STRONG here is a floor of 0.75 rather than DataCo's 0.70, and this pack additionally
+        requires six of eight components measured before an edge is scored at all. A clinical
+        reader acts on an asserted mechanism differently from a logistics analyst, and the
+        cost of a wrong assertion is not symmetric between the two domains.
+    - edge_kind: CONDITIONAL
+      minimum_band: SUGGESTIVE
+      rationale: >-
+        DELIBERATELY LOWER than DIRECT, which is where this pack disagrees with the DataCo
+        one rather than merely differing in magnitude. A conditional edge states its
+        qualifying condition and whether the condition held, so a reader sees the scope of
+        the claim and can reject it themselves. An unqualified assertion offers no such
+        handle, and should therefore clear a higher bar.
+
+  # The opposite policy from DataCo's, and for a domain reason. This pack's report is read
+  # to decide what to look at next, and a list of every admissible cause for an outcome is
+  # not a shortlist. Three is the number a reviewer will actually read.
+  competing_effect_policy: RETAIN_TOP_N
+  competing_retain_count: 3
+
+  diversity_credit_ceiling: 0.02
+
+  magnitude_attributions:
+    - effect_event_type: DISCHARGED
+      measurement_id: LENGTH_OF_STAY
+      rationale: >-
+        Length of stay is the quantity this pack apportions. It is a DURATION rather than a
+        DELAY -- there is no promised duration to be late against -- so a share of it is a
+        share of elapsed time and not a share of an overrun, and the report says so.
+
+  weight_normalization: SHARE_OF_INCOMING
+
+  circuit_enumeration_cap: 50
+
+  # Three rather than DataCo's two. This pack's events are stamped to the hour
+  # (temporal_reference_seconds is 7200 against DataCo's 86400), so a mutual pair here is
+  # much less likely to be a granularity artifact and much more likely to be a real
+  # modelling error worth surfacing separately rather than as a loop.
+  loop_minimum_participants: 3
+
 
 rules:
 
@@ -163,3 +287,30 @@ rules:
             address: {binding: MODIFIER, role: SUBJECT, attribute: acuity}
           - op: CONSTANT
             value: "URGENT"
+
+
+# ---------------------------------------------------------------------------------------
+# Module 13's simulation bounds (rule_pack_schema_version 1.6.0, ADR-0071).
+#
+# This pack takes the schema bump and declares NOTHING here, exactly as it declared nothing
+# in the three namespaces ADR-0063 added. That is a valid pack and it is deliberate: it
+# exercises the absent-means-CANNOT-RUN path (ADR-0049) rather than leaving that path
+# proved only by a unit test. A run against this pack simulates nothing and reports which
+# declaration each policy would have needed.
+# ---------------------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------------------
+# Module 14's ranking weights and search bounds (rule_pack_schema_version 1.7.0, ADR-0079).
+#
+# This pack takes the schema bump and declares NOTHING here, exactly as it declared nothing
+# in the four namespaces ADR-0063 and ADR-0071 added. That is a valid pack and it is
+# deliberate: it exercises the absent-means-CANNOT-RUN path (ADR-0049) rather than leaving
+# that path proved only by a unit test. A run against this pack recommends nothing and
+# reports which declaration each policy would have needed.
+#
+# It also exercises the second half of ADR-0073: this pack declares four actionable event
+# types and an operational risk class for none of them, so every candidate it produces
+# would carry risk NOT_DECLARED -- the path DataCo cannot reach because DataCo declares all
+# fourteen.
+# ---------------------------------------------------------------------------------------
+

@@ -33,6 +33,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CONTEXT = REPO_ROOT / "CONTEXT.md"
 DECISIONS = REPO_ROOT / "DECISIONS.md"
 
+#: Every file that may name an ADR. Rule 7 scans all of them, because the 2026-09-07 gap was
+#: in `docs/architecture.md` as much as in CONTEXT.md, and a check that read one file would
+#: have found two thirds of it.
+GOVERNANCE_FILES = (
+    CONTEXT,
+    REPO_ROOT / "PROGRESS.md",
+    REPO_ROOT / "CONVENTIONS.md",
+    REPO_ROOT / "GLOSSARY.md",
+    REPO_ROOT / "HANDOFF.md",
+    REPO_ROOT / "docs" / "architecture.md",
+    REPO_ROOT / "docs" / "contracts.md",
+    REPO_ROOT / "docs" / "ontology.md",
+)
+
 STRUCK = re.compile(r"~~(OQ-\d+)~~")
 OPEN_ROW = re.compile(r"^\| (OQ-\d+) \|", re.M)
 ADR_HEADING = re.compile(r"^## (ADR-\d+) — ", re.M)
@@ -50,8 +64,33 @@ def adr_statuses(decisions: str) -> dict[str, str]:
     return statuses
 
 
-def check(context: str, decisions: str) -> int:
-    """Report every inconsistency and return the count."""
+def governance_texts() -> dict[str, str]:
+    """Return the text of every governance file that may name an ADR."""
+    return {
+        path.name: path.read_text(encoding="utf-8")
+        for path in GOVERNANCE_FILES
+        if path.is_file()
+    }
+
+
+def check(
+    context: str, decisions: str, governance: dict[str, str] | None = None
+) -> int:
+    """Report every inconsistency and return the count.
+
+    `governance` is the text of every file rule 7 scans, and it DEFAULTS TO EMPTY rather
+    than to the real files on disk. Two reasons, and the second was found by a test.
+
+    First, a checker called with explicit arguments should be a function of those arguments.
+    Reading ambient files behind a caller's back makes the self-test's result depend on the
+    repository it runs in, which is the opposite of what a self-test is for.
+
+    Second, `tests/law/test_enforcement_scripts_prove_themselves.py` calls this with two
+    arguments and asserts an exact failure count. A default that reached for the real
+    governance files made every one of those assertions depend on the state of the repository
+    -- three of them failed the moment rule 7 was added, for a reason that had nothing to do
+    with what they were testing. `main()` passes `governance_texts()` explicitly instead.
+    """
     failures = 0
     struck = set(STRUCK.findall(context))
     open_rows = set(OPEN_ROW.findall(context))
@@ -121,6 +160,30 @@ def check(context: str, decisions: str) -> int:
             )
             failures += 1
 
+    # Rule 7 (ADR-0065). Every ADR named anywhere in the governance record must exist.
+    #
+    # Rules 1-6 all fire on an ADR that DOES exist -- a struck question naming a missing one,
+    # a superseded ADR naming a missing successor, an open question answered by an accepted
+    # one. None of them can see a RESERVED number that was never written, and on 2026-09-07
+    # exactly that was found: `docs/architecture.md` §2, CONTEXT.md OQ-007 and PROGRESS.md §13
+    # all named ADR-0011 as a precondition on module 13, numbering had reached ADR-0064, and
+    # ADR-0011 had never been written. Three documents pointed at a decision that did not
+    # exist and the check that exists to catch exactly this could not see it.
+    #
+    # A dangling pointer reads like a decision and is not, which is the DEF-0001 shape. So the
+    # scan covers the whole governance record rather than CONTEXT.md's §8 alone.
+    for name, text in sorted((governance or {}).items()):
+        for named in sorted(set(re.findall(r"ADR-\d+", text))):
+            if named in declared:
+                continue
+            print(
+                f"{name} names {named}, which does not exist in DECISIONS.md. A "
+                "reserved number that was never written reads like a decision and is not "
+                "(the DEF-0001 shape); write the ADR, or name the one that actually "
+                "settles the point."
+            )
+            failures += 1
+
     return failures
 
 
@@ -133,30 +196,52 @@ def self_test() -> int:
         "## ADR-0019 — c\n\n- **Status:** accepted\n- **Supersedes:** ADR-0010\n"
     )
 
-    cases: tuple[tuple[str, str, str, bool], ...] = (
-        ("a consistent record", good_context, good_decisions, False),
+    #: Rule 7's input, injected per case. Empty for every case that is not about it, so
+    #: those cases keep testing exactly the rule they were written for.
+    no_governance: dict[str, str] = {}
+
+    cases: tuple[tuple[str, str, str, dict[str, str], bool], ...] = (
+        ("a consistent record", good_context, good_decisions, no_governance, False),
+        (
+            "a governance file naming an ADR that exists",
+            good_context,
+            good_decisions,
+            {"architecture.md": "module 13 requires ADR-0006 before it is built."},
+            False,
+        ),
+        (
+            "a governance file naming a RESERVED ADR that was never written",
+            good_context,
+            good_decisions,
+            {"architecture.md": "module 13 requires ADR-0011 before it is built."},
+            True,
+        ),
         (
             "a question both struck and open",
             good_context + "| OQ-001 | q | d | c | ADR-0006 |\n",
             good_decisions,
+            no_governance,
             True,
         ),
         (
             "a struck question naming no ADR",
             "| ~~OQ-002~~ resolved | q | d | c | none |\n",
             good_decisions,
+            no_governance,
             True,
         ),
         (
             "a struck question naming a nonexistent ADR",
             "| ~~OQ-002~~ **RESOLVED by ADR-0099** | q | d | c | ADR-0099 |\n",
             good_decisions,
+            no_governance,
             True,
         ),
         (
             "a superseded ADR with no successor",
             good_context,
             "## ADR-0010 — b\n\n- **Status:** superseded\n- **Supersedes:** —\n",
+            no_governance,
             True,
         ),
         (
@@ -164,33 +249,36 @@ def self_test() -> int:
             good_context,
             "## ADR-0010 — b\n\n- **Status:** accepted\n- **Supersedes:** —\n\n"
             "## ADR-0019 — c\n\n- **Status:** accepted\n- **Supersedes:** ADR-0010\n",
+            no_governance,
             True,
         ),
         (
             "an open question already answered by an accepted ADR",
             "| OQ-008 | q | d | c | ADR-0006 |\n",
             good_decisions,
+            no_governance,
             True,
         ),
         (
             "an open question called resolved in prose",
             "OQ-005 was resolved last week.\n| OQ-005 | q | d | c | ADR-0009 |\n",
             good_decisions,
+            no_governance,
             True,
         ),
     )
 
     failures = 0
-    for label, context, decisions, must_reject in cases:
+    for label, context, decisions, governance, must_reject in cases:
         with contextlib.redirect_stdout(io.StringIO()):
-            rejected = check(context, decisions) > 0
+            rejected = check(context, decisions, governance) > 0
         if rejected != must_reject:
             verb = "was accepted" if must_reject else "was rejected"
             print(f"SELF-TEST FAILED: {label} {verb} and must not have been.")
             failures += 1
 
     if failures == 0:
-        rejecting = sum(1 for _, _, _, must_reject in cases if must_reject)
+        rejecting = sum(1 for *_, must_reject in cases if must_reject)
         print(
             f"self-test passed: {rejecting} inconsistency shapes rejected, "
             f"{len(cases) - rejecting} consistent record accepted."
@@ -203,7 +291,7 @@ def main() -> int:
     if "--self-test" in sys.argv:
         return 1 if self_test() else 0
 
-    failures = check(CONTEXT.read_text(), DECISIONS.read_text())
+    failures = check(CONTEXT.read_text(), DECISIONS.read_text(), governance_texts())
     if failures:
         print(f"\nGOVERNANCE CONSISTENCY: {failures} inconsistency(ies). BUILD FAILED.")
         return 1

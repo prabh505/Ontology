@@ -18,7 +18,7 @@ from typing import Any
 
 from causalog.core.ontology_view import VocabularyView
 from causalog.core.types import Entity, Event
-from causalog.rule_engine.dsl import RulePackSpec
+from causalog.rule_engine.dsl import RULE_PACK_SCHEMA_VERSION, RulePackSpec
 from causalog.rule_engine.facts import FactSet
 from tests.fixtures.facts import entity, evidence_record, interval, relationship, state
 
@@ -138,7 +138,8 @@ def pack(*rules: dict[str, Any], version: str = "1.0.0") -> RulePackSpec:
     """Return a validated pack around the given rule documents."""
     return RulePackSpec.model_validate(
         {
-            "rule_pack_schema_version": "1.0.0",
+            # Read from the DSL, not pinned -- see tests/unit/rule_engine/test_loader.py.
+            "rule_pack_schema_version": RULE_PACK_SCHEMA_VERSION,
             "rule_pack_id": "fixture",
             "rule_pack_version": version,
             "ontology_pack": "fixture",

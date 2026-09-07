@@ -27,7 +27,7 @@
 # Declaring them with ASSUMED attributes would manufacture occurrences the source never
 # recorded, which is the failure LAW-PROVENANCE exists to prevent.
 
-pack_schema_version: "1.0.0"
+pack_schema_version: "1.2.0"
 pack_id: dataco
 ontology_version: "1.0.0"
 extends: _base
@@ -603,6 +603,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: LOW
+      # Approving earlier commits a funds decision that only a compensating reversal undoes.
+      risk_class: MODERATE
       severity_class: MODERATE
 
   - id: PAYMENT_FAILED
@@ -631,6 +633,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: LOW
+      # Retrying a failed authorisation is reversible and confined to the one order.
+      risk_class: LOW
       severity_class: MAJOR
 
   - id: PAYMENT_REVIEW_OPENED
@@ -659,6 +663,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: MODERATE
+      # Opening or closing a review is reversible and confined to the one order.
+      risk_class: LOW
       severity_class: MODERATE
 
   - id: FRAUD_SUSPECTED
@@ -688,6 +694,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: MODERATE
+      # Suppressing a suspicion is not reversible once the consignment has left.
+      risk_class: HIGH
       severity_class: MAJOR
 
   - id: ORDER_HELD
@@ -713,6 +721,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: LOW
+      # A hold is reversible and its effect is confined to the order it is placed on.
+      risk_class: LOW
       severity_class: MODERATE
 
   - id: ORDER_RELEASED
@@ -741,6 +751,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: MODERATE
+      # A release is not reversible once fulfilment has begun against it.
+      risk_class: HIGH
       severity_class: MODERATE
 
   - id: ORDER_CANCELED
@@ -770,6 +782,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: LOW
+      # Cancellation terminates the process without its intended outcome.
+      risk_class: SEVERE
       severity_class: CRITICAL
 
   - id: INVENTORY_RESERVED
@@ -822,6 +836,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: MODERATE
+      # A reservation commits stock that concurrent orders are relying on.
+      risk_class: HIGH
       severity_class: MODERATE
 
   - id: INVENTORY_RELEASED
@@ -850,6 +866,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: LOW
+      # Releasing a reservation affects concurrent orders and is undone only by re-reserving.
+      risk_class: MODERATE
       severity_class: MINOR
 
   - id: INVENTORY_SHORTFALL_DETECTED
@@ -879,6 +897,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: HIGH
+      # Checking stock earlier disturbs nothing outside the instance and is reversible within it.
+      risk_class: NEGLIGIBLE
       severity_class: MAJOR
 
   - id: ITEM_PICKED
@@ -908,6 +928,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: MODERATE
+      # Resequencing a pick affects the concurrent picks sharing the same site resource.
+      risk_class: MODERATE
       severity_class: MINOR
 
   - id: ITEM_PACKED
@@ -936,6 +958,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: MODERATE
+      # Resequencing a pack affects the concurrent packs sharing the same site resource.
+      risk_class: MODERATE
       severity_class: MINOR
 
   - id: SHIPMENT_DISPATCHED
@@ -964,6 +988,8 @@ event_types:
         origin: SOURCE_COLUMN
         source_column: Days for shipment (scheduled)
         description: The transit duration the service level promises.
+        mutable: true
+        admissible_range: [0.0, 30.0]
       - name: shipping_mode_name
         type: ENUMERATION
         semantics: CATEGORICAL
@@ -971,6 +997,8 @@ event_types:
         source_column: Shipping Mode
         enumeration_values: [STANDARD_CLASS, FIRST_CLASS, SECOND_CLASS, SAME_DAY]
         description: The service level the consignment ships under.
+        mutable: true
+        admissible_values: [FIRST_CLASS, SAME_DAY, SECOND_CLASS, STANDARD_CLASS]
     preconditions:
       - {role: SUBJECT, state_in: [PROCESSING]}
       - {role: LINE, state_in: [PACKED]}
@@ -995,6 +1023,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: MODERATE
+      # Dispatch commits carrier capacity other consignments are relying on and is not reversible.
+      risk_class: HIGH
       severity_class: MAJOR
 
   - id: SHIPMENT_IN_TRANSIT
@@ -1050,6 +1080,8 @@ event_types:
         origin: SOURCE_COLUMN
         source_column: Days for shipment (scheduled)
         description: The transit duration the service level promises.
+        mutable: true
+        admissible_range: [0.0, 30.0]
     preconditions:
       - {role: SUBJECT, state_in: [IN_TRANSIT]}
     derivation:
@@ -1071,6 +1103,8 @@ event_types:
     actionability:
       actionable: true
       cost_class: HIGH
+      # Expediting reallocates transport capacity and is undone only by a compensating reallocation.
+      risk_class: MODERATE
       severity_class: MAJOR
 
   - id: SHIPMENT_DELIVERED

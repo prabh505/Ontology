@@ -1,6 +1,6 @@
 # A valid base pack, present only so withdrawal_removes_nothing.yaml has something to
 # extend. It declares one cost class, and deliberately not the one that fixture removes.
-pack_schema_version: "1.0.0"
+pack_schema_version: "1.2.0"
 pack_id: base_for_fixtures
 ontology_version: "1.0.0"
 description: A base pack for the withdrawal fixture.

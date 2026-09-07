@@ -2,7 +2,7 @@
 # aggregator does not weight. The admissible names are part of confidence_schema_version
 # (docs/contracts.md §5); guessing a weight would let a schema change shift every score.
 # Derived from tests/fixtures/ontology/valid_minimal.yaml with one defect.
-pack_schema_version: "1.0.0"
+pack_schema_version: "1.2.0"
 pack_id: minimal
 ontology_version: "1.0.0"
 description: The smallest pack that exercises every namespace.

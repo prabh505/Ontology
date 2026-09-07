@@ -80,8 +80,8 @@ def test_comments_indentation_and_key_sequence_do_not_move_the_hash(
 
     commented = "# an added comment, meaning nothing\n" + source + "\n# and a trailing one\n"
     resequenced = source.replace(
-        'pack_schema_version: "1.0.0"\npack_id: minimal\n',
-        'pack_id: minimal\npack_schema_version: "1.0.0"\n',
+        'pack_schema_version: "1.2.0"\npack_id: minimal\n',
+        'pack_id: minimal\npack_schema_version: "1.2.0"\n',
     )
     assert resequenced != source
 

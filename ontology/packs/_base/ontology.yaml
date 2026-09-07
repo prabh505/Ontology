@@ -1,8 +1,9 @@
 # The shared base pack. Structure only -- no domain declares itself here.
 #
 # What lives in a base pack is exactly what is true of every domain: the ordinal
-# vocabularies that ranking needs (cost and severity), with their ranks. A domain overlay
-# extends this and adds its own entity types, event types, processes and measurements.
+# vocabularies that ranking needs (cost, severity and operational risk), with their ranks.
+# A domain overlay extends this and adds its own entity types, event types, processes and
+# measurements.
 #
 # LAW-DOMAIN, read the other way round: if a declaration here named a concept from any one
 # domain, every future domain would inherit that domain's assumptions.
@@ -11,12 +12,13 @@
 # identifier, wholesale. A base entry is withdrawn only through an explicit `removes:`
 # block. There is no field-level merge.
 
-pack_schema_version: "1.0.0"
+pack_schema_version: "1.2.0"
 pack_id: _base
 ontology_version: "1.0.0"
 description: >-
-  Structural base for every CausaLog domain pack. Declares the ordinal cost and severity
-  vocabularies that root-cause ranking and intervention costing read, and nothing else.
+  Structural base for every CausaLog domain pack. Declares the ordinal cost, severity and
+  operational-risk vocabularies that root-cause ranking and intervention recommendation
+  read, and nothing else.
 
 # Ordinal intervention cost bands (CONTEXT.md OQ-013). Provenance is ASSUMED wherever these
 # are applied: no dataset establishes what an intervention costs. `rank` carries the
@@ -39,6 +41,49 @@ cost_classes:
     description: >-
       An action the organization can take in principle and will not take in practice.
       Declared so that ranking can rank it last rather than omit it silently.
+
+# Ordinal operational-risk bands (ADR-0073, pack schema 1.2.0). prd.md §50 requires an
+# operational risk on every recommendation; before this vocabulary existed nothing in the
+# repository declared one, and module 14 would have had to invent it in engine code -- the
+# R-16 shape that LAW-DOMAIN exists to stop.
+#
+# Risk here is the risk of TAKING the action, not the risk of the occurrence it acts on.
+# That second thing is `severity_classes`, and the two are deliberately separate: a cheap
+# action against a critical occurrence can be perfectly safe to take, and an expensive
+# action against a minor one can still destabilise the process around it. Collapsing them
+# would make a recommendation's fourth objective a restatement of a quantity it already
+# ranks on.
+#
+# Provenance is ASSUMED wherever these are applied. Nothing in this system can validate a
+# risk declaration, exactly as nothing can validate an actionability flag (R-15, now R-25).
+# An event type that declares NO risk_class is reported as NOT_DECLARED and ranks nowhere
+# on this objective; it is never read as NEGLIGIBLE.
+risk_classes:
+  - id: NEGLIGIBLE
+    rank: 0
+    description: >-
+      Taking the action disturbs nothing outside the process instance it is taken in, and
+      is reversible within that instance.
+  - id: LOW
+    rank: 1
+    description: >-
+      Taking the action is reversible and its effects are confined to the process it acts
+      on.
+  - id: MODERATE
+    rank: 2
+    description: >-
+      Taking the action affects concurrent process instances, or is reversible only by a
+      compensating action.
+  - id: HIGH
+    rank: 3
+    description: >-
+      Taking the action is not reversible, or commits a resource that other processes are
+      relying on.
+  - id: SEVERE
+    rank: 4
+    description: >-
+      Taking the action can terminate a process without its intended outcome. Declared so
+      that ranking can rank it last rather than omit it silently.
 
 # Ordinal severity bands. Read by root-cause ranking alongside impact; never inferred.
 severity_classes:

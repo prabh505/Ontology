@@ -44,13 +44,40 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from causalog.core.types import Event, State
 from causalog.rule_engine.dsl import RelationDirection
 from causalog.rule_engine.facts import GraphFacts
 
 __all__ = ["FactIndex", "build_index"]
+
+
+def _saturating_shift(moment: datetime, delta: timedelta, *, backwards: bool) -> datetime:
+    """Return `moment - delta` or `moment + delta`, saturating at the representable extremes.
+
+    **This function is a fix, and the bug it fixes was documented behaviour.**
+    `admissible_slice` has always stated that an `UNKNOWN`-precision event gives its bucket
+    an unbounded `max_span`, "so the lower cut degenerates to zero and that bucket is
+    scanned from its start". It never did: `cause_earliest - span` raised `OverflowError`
+    instead, because `UNKNOWN_EARLIEST` is `datetime.min` and the span across an unbounded
+    interval is the whole representable range.
+
+    The paragraph was right about what should happen, and nothing ever executed it. No test
+    put an `UNKNOWN`-precision event into a bucket a rule matched on, so the claim was
+    unfalsifiable until module 9 became the rule engine's first consumer over real events and
+    the reference dataset supplied one. That is the DEF-0001 shape again -- documented
+    behaviour, unexercised, and therefore untrue.
+
+    Saturating is the right arithmetic rather than a guard clause: the extremes MEAN "nothing
+    is excluded" (`core.temporal.UNKNOWN_EARLIEST` / `UNKNOWN_LATEST`), so a cut that runs off
+    the end of representable time is a cut that excludes nothing -- which is exactly the
+    degenerate case the docstring describes.
+    """
+    try:
+        return moment - delta if backwards else moment + delta
+    except OverflowError:
+        return datetime.min.replace(tzinfo=UTC) if backwards else datetime.max.replace(tzinfo=UTC)
 
 
 @dataclass(frozen=True)
@@ -135,8 +162,13 @@ class FactIndex:
             return (), 0
         keys = self.earliest_of[event_type]
         span = self.max_span_of[event_type]
-        low = bisect_left(keys, cause_earliest - span)
-        high = bisect_right(keys, cause_latest + timedelta(seconds=window_maximum_seconds))
+        low = bisect_left(keys, _saturating_shift(cause_earliest, span, backwards=True))
+        high = bisect_right(
+            keys,
+            _saturating_shift(
+                cause_latest, timedelta(seconds=window_maximum_seconds), backwards=False
+            ),
+        )
         return bucket[low:high], low
 
     def neighbours(

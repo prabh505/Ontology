@@ -31,6 +31,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Final
 
 from causalog.core.errors import DataQualityError
+from causalog.core.precedence import temporal_binding_source
 from causalog.core.provenance import ProvenanceClass
 from causalog.core.temporal import (
     UNKNOWN_EARLIEST,
@@ -192,7 +193,7 @@ def build_interval(value: str | None, binding: TemporalBindingSpec) -> TimeInter
             not retried against a second format: a date the declared format cannot read is
             either a different format or corrupt, and choosing between those is a guess.
     """
-    source = f"mapping.temporal_bindings[{binding.column}]"
+    source = temporal_binding_source(binding.column)
     if value is None or not value.strip():
         return TimeInterval(
             t_earliest=UNKNOWN_EARLIEST,

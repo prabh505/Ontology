@@ -68,7 +68,7 @@ __all__ = [
 #: The version of the DSL itself, not of any pack authored in it. A pack declaring a
 #: different value is refused rather than best-effort parsed: a schema mismatch is a
 #: migration, exactly as `core.serialization` treats a wire-format mismatch.
-PACK_SCHEMA_VERSION: Final[str] = "1.0.0"
+PACK_SCHEMA_VERSION: Final[str] = "1.2.0"
 
 #: Type, category, state, and role names. Uppercase so a pack identifier is never confused
 #: with an attribute name, which is lower snake case.
@@ -246,7 +246,7 @@ class EventCategorySpec(_Spec):
 
 
 class ClassSpec(_Spec):
-    """One member of a pack-declared ordinal vocabulary (cost or severity).
+    """One member of a pack-declared ordinal vocabulary (cost, severity or risk).
 
     `rank` carries the sequence so a ranker can compare two members without reading their
     names. Names are for humans; `rank` is for the engine.
@@ -276,6 +276,58 @@ class AttributeSpec(_Spec):
     assumption: str | None = None
     enumeration_values: tuple[str, ...] = ()
     unit: str | None = None
+    #: ADR-0067, pack schema 1.1.0, additive. Whether a hypothetical may set this attribute
+    #: to something else. **The default refuses.** A pack authored against 1.0.0 declares no
+    #: changeable attribute at all, which is ADR-0049's absent-means-CANNOT-RUN rule in the
+    #: direction that withholds permission rather than granting it: a simulator asked to
+    #: change an undeclared attribute reports which declaration it would have needed.
+    #:
+    #: Nothing validates the claim. `mutable: true` on an attribute no operator could really
+    #: have set is a declaration that loads cleanly and is wrong (R-16).
+    mutable: bool = False
+    #: The DECLARED closed vocabulary a changed value must belong to. Distinct from
+    #: `enumeration_values`, which describes what the SOURCE carries: a pack may admit a
+    #: value for a hypothetical that no record ever held, and conflating the two would make
+    #: every unwitnessed value inadmissible.
+    admissible_values: tuple[str, ...] = ()
+    #: The DECLARED inclusive numeric bound `(low, high)` a changed value must lie within.
+    #: Not the observed range -- that is measured from a run and is what a support envelope
+    #: compares against (ADR-0070). A value inside this bound and outside anything the data
+    #: witnessed is possible and unsupported, which is the case an extrapolation verdict
+    #: exists to name.
+    admissible_range: tuple[float, float] | None = None
+
+    @model_validator(mode="after")
+    def _check_mutability(self) -> AttributeSpec:
+        """Refuse a bound that admits nothing, and a bound on an unchangeable attribute."""
+        if self.admissible_range is not None:
+            low, high = self.admissible_range
+            if low > high:
+                raise ContractViolationError(
+                    f"attribute '{self.name}' declares admissible_range ({low}, {high}), "
+                    "whose low bound is above its high one. That range admits no value, so "
+                    "every change would be refused and the declaration would read as though "
+                    "it permitted one."
+                )
+        if not self.mutable and (self.admissible_values or self.admissible_range is not None):
+            raise ContractViolationError(
+                f"attribute '{self.name}' declares an admissible bound but is not marked "
+                "mutable. A bound on a value nothing may set is a declaration with no "
+                "consumer, and a pack author reading it would believe the attribute is a "
+                "lever. Add 'mutable: true' or remove the bound."
+            )
+        if len(set(self.admissible_values)) != len(self.admissible_values):
+            raise ContractViolationError(
+                f"attribute '{self.name}' repeats a value in admissible_values; the "
+                "vocabulary is a set and a repeat makes its canonical form ambiguous."
+            )
+        if list(self.admissible_values) != sorted(self.admissible_values):
+            raise ContractViolationError(
+                f"attribute '{self.name}' declares admissible_values out of canonical "
+                "sequence; two packs differing only in authoring sequence must hash alike "
+                "(CONVENTIONS.md §11)."
+            )
+        return self
 
     @model_validator(mode="after")
     def _check_origin_evidence(self) -> AttributeSpec:
@@ -448,17 +500,28 @@ class DerivationSpec(_Spec):
 
 
 class ActionabilitySpec(_Spec):
-    """Whether an operator can act on an event type, and at what cost.
+    """Whether an operator can act on an event type, at what cost, and at what risk.
 
     Root-cause ranking reads this (ADR-0008), which is why it is declared rather than
     inferred. `provenance_class` is pinned to `ASSUMED`: risk R-15 records that nothing in
     the system can validate an actionability claim, and labelling it anything stronger
     would hide that.
+
+    `risk_class` arrives at pack schema 1.2.0 (ADR-0073) because prd.md §50 requires an
+    operational risk on every recommendation and nothing in this repository declared one.
+    It is OPTIONAL where `cost_class` is mandatory, and the asymmetry is deliberate: an
+    actionable type with no cost would rank as free, which is a wrong number, whereas an
+    actionable type with no risk ranks nowhere on that objective and is reported as
+    `NOT_DECLARED`. ADR-0049's rule in the direction that refuses -- absent means the
+    objective CANNOT RUN for this type, never that the risk is nil.
     """
 
     actionable: bool
     severity_class: str = Field(pattern=SYMBOL_PATTERN)
     cost_class: str | None = Field(default=None, pattern=SYMBOL_PATTERN)
+    #: ADR-0073, pack schema 1.2.0, additive. Names a member of `risk_classes`. Absent is a
+    #: legitimate state and is never read as "no risk"; see this class's docstring.
+    risk_class: str | None = Field(default=None, pattern=SYMBOL_PATTERN)
     provenance_class: ProvenanceClass = ProvenanceClass.ASSUMED
 
     @model_validator(mode="after")
@@ -478,6 +541,13 @@ class ActionabilitySpec(_Spec):
             raise ContractViolationError(
                 "actionability declares actionable: false with a cost_class; a cost for an "
                 "action nobody can take is a number with no referent."
+            )
+        if not self.actionable and self.risk_class is not None:
+            raise ContractViolationError(
+                "actionability declares actionable: false with a risk_class; the risk of "
+                "taking an action nobody can take is a number with no referent (ADR-0073). "
+                "An actionable type MAY omit risk_class -- that is reported as NOT_DECLARED "
+                "rather than defaulted -- but a non-actionable type may not carry one."
             )
         return self
 
@@ -638,6 +708,7 @@ class RemovalSpec(_Spec):
     event_categories: tuple[str, ...] = ()
     cost_classes: tuple[str, ...] = ()
     severity_classes: tuple[str, ...] = ()
+    risk_classes: tuple[str, ...] = ()
     entity_types: tuple[str, ...] = ()
     relationship_types: tuple[str, ...] = ()
     event_types: tuple[str, ...] = ()
@@ -652,6 +723,9 @@ class _PackBody(_Spec):
     event_categories: tuple[EventCategorySpec, ...] = ()
     cost_classes: tuple[ClassSpec, ...] = ()
     severity_classes: tuple[ClassSpec, ...] = ()
+    #: ADR-0073, pack schema 1.2.0, additive. An empty vocabulary is a pack that declares
+    #: no operational risk at all; every consumer reports NOT_DECLARED and never defaults.
+    risk_classes: tuple[ClassSpec, ...] = ()
     entity_types: tuple[EntityTypeSpec, ...] = ()
     relationship_types: tuple[RelationshipTypeSpec, ...] = ()
     event_types: tuple[EventTypeSpec, ...] = ()

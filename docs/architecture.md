@@ -47,7 +47,7 @@ is a defect.
 | L3 | `extraction` | Convert mapped records into entities and events | 3 Entity Extractor · 4 Event Generator |
 | L4 | `graph_engine` | Assemble observed structure into the temporal graph | 5 Timeline Builder · 6 State Engine · 7 Relationship Resolver · 8 Temporal Graph Builder |
 | L5 | `rule_engine` | Load, conflict-check, and evaluate rule packs | — (mechanism, prd.md §46) |
-| L6 | `causal_engine` | Produce scored causal structure | 9 Candidate Cause Generator · 10 Confidence Scorer · 11 Root Cause Analyzer · 12 Propagation Analyzer |
+| L6 | `causal_engine` | Produce scored causal structure | 9 Candidate Cause Generator · 10 Confidence Scorer · 11 Root Cause Analyzer · 12 Propagation Analyzer · *(plus two packages that are deliberately not modules: the Causal Graph Builder and the pattern miner — see §2 and OQ-025)* |
 | L7 | `counterfactual_engine` · `recommendation_engine` | Simulate worlds; rank interventions | 13 Counterfactual Simulator · 14 Intervention Optimizer |
 | L8 | `explanation_engine` | Render graph evidence into language | 15 Explanation Generator |
 | L9 | `orchestration` | Compose a Run by wiring adapters into the pipeline | — |
@@ -280,11 +280,52 @@ module 9 depends on it and a seam with no stated contract is one every consumer 
 
 ---
 
+### Causal Graph Builder · `causal_engine/causal_graph_builder` · L6 · **not a §36 module**
+
+- **Why it is here and not numbered.** prd.md §36 names no owner for §25 (the causal graph),
+  §26 (the edge taxonomy) or §31 (feedback loops): module 9 proposes, module 10 scores, and
+  modules 11 and 12 both consume a graph they assume exists. This package is that assembly
+  step, landed as the ontology layer and the rule engine were (ADR-0054). `CONTEXT.md`
+  OQ-025 records the gap and proposes amending §36 rather than renumbering 11–16.
+- **Responsibility.** Decide which scored claims the engine will assert, type them, weight
+  them, detect feedback loops, and report what the resulting graph does not contain.
+- **Input.** `CausalGraph` (module 10), `GraphFacts`, `tuple[Timeline, ...]`,
+  `tuple[CandidateEdge, ...]` (lineage only), `GraphConstructionSpec` + `ConfidenceScoringSpec`
+  from the rule pack, `EvaluationResult`, `tuple[MagnitudeMeasurementView, ...]`
+- **Output.** `PromotedGraph` (the stated view **and** the rejection ledger, of equal
+  standing), `LoopDetectionResult`, `GraphQualityReport`
+- **Invariants.** **Owns the promotion decision.** `ProvenanceClass.INFERRED` is assigned in
+  `policy.py` alone, across the whole engine (ADR-0054), under a **per-edge-kind** threshold
+  declared in the pack. LAW-TIME is re-verified there by two independent mechanisms:
+  explicitly against the two `Event` intervals — the check a stored `CausalEdge` cannot
+  perform on itself (DEF-0002) — and again through `core.immutability.revise`, which re-runs
+  the frozen type's `INFERRED ⇒ CERTAIN ∧ ¬unverifiable` invariant. `promoted + demoted ==
+  considered` is checked at construction. Joint cause groups are promoted **all-or-nothing**.
+  Sequencing is canonical, never by score.
+- **Feedback loops are detected over the event-TYPE projection, never over event instances.**
+  At the instance level a `CERTAIN` verdict is a strict precedence relation and strict
+  precedence admits no cycle, so an all-`CERTAIN` instance-level circuit is arithmetically
+  impossible — a detector running there could only ever find artifacts. Four classifications
+  (`GENUINE`, `TEMPORAL_ARTIFACT`, `WITHIN_INSTANCE`, `UNPROMOTED`), decided in engine code
+  because a pack that could decide them would make "the engine detected a reinforcing loop"
+  mean two different things in two packs.
+- **Failure modes.** An undeclared policy is reported `NOT_RUNNABLE` with its requirement,
+  never defaulted. A magnitude that cannot be evaluated falls back to a share of *belief*
+  under a distinct `WeightBasis`, and the report names every effect that fell back — a share
+  of belief and a share of a quantity are never printed under one heading. A circuit-heavy
+  component reports truncation at the declared cap rather than running unbounded.
+- **Forbidden from.** Ranking (module 11's). Scoring (module 10's). Proposing a pair (module
+  9's). Resolving a typing disagreement, a contradictory promoted pair, or a confounding
+  structure — all are reported, none resolved. Importing `ontology_runtime` (F3).
+
+---
+
 ### Module 11 — Root Cause Analyzer · `causal_engine/root_cause_analyzer` · L6
 
 - **Responsibility.** Rank causes by impact averted, with structural earliness reported separately.
-- **Input.** `CausalGraph`, `PropagationReport`, and `Event.is_actionable` — read from the event, never from the ontology (ADR-0008, forbidden edge F3)
-- **Output.** `RootCauseRanking` with **two separate fields**: `earliest_cause` (structural) and `actionable_root_causes` (ranked by impact-averted × confidence, tie-broken by earliness)
+- **Input.** A `GraphView` — `PromotedGraph` under the `STATED` standing, module 10's `CausalGraph` under `UNPROMOTED_DIAGNOSTIC` (ADR-0059) — plus `PropagationReport` and `Event.is_actionable`, read from the event and never from the ontology (ADR-0008, forbidden edge F3). The declared cost and severity ranks arrive as flattened `core.ontology_view` values (ADR-0062) and refine a set the stamp has already selected; they never override it.
+  *(Corrected 2026-09-06. This line named `CausalGraph` alone, which ADR-0054 superseded when it moved promotion into the Causal Graph Builder and made `PromotedGraph` the engine's stated view. The section was not updated then; it is updated here rather than left as a second, stale definition of this module's input.)*
+- **Output.** `RootCauseRanking` with **four separate fields**, never collapsed: `earliest_cause` (structural), `highest_consequence_cause`, `most_actionable_cause`, and `actionable_root_causes` (sequenced by prevented-consequence × chain confidence under a named function in `core.ranking`, tie-broken by earliness). ADR-0008 required the first and last; the middle two are the other two questions §29's example distinguishes, and a `TradeOff` is emitted for every pair naming different events. There is **no root-cause score field on the type**.
 - **Invariants.** The two fields are never collapsed into one number. Every ranked cause carries its `ConfidenceVector` and the evidence behind its impact estimate.
 - **Failure modes.** prd.md defines root cause twice — §12 ("could prevent downstream consequences") and §29 ("would prevent the *largest* downstream impact"). Earliest and largest-impact disagree; §29's own storm → traffic → late-dispatch example says the system should distinguish both. **ADR-0008** adopts §29 for ranking and requires both fields. An event type whose `actionable` flag is mis-declared silently changes the ranking and nothing can detect it (`CONTEXT.md` R-15). A cycle in the causal graph yields a reported feedback loop, not an infinite traversal. Partial data: a chain containing a timeline gap is ranked but flagged, and the flag must survive into the explanation.
 - **Forbidden from.** Creating an edge. Returning one field where two are contractually required. Ranking on the derived scalar alone.
@@ -294,9 +335,9 @@ module 9 depends on it and a seam with no stated contract is one every consumer 
 ### Module 12 — Propagation Analyzer · `causal_engine/propagation_analyzer` · L6
 
 - **Responsibility.** Measure how an effect spreads through the causal graph.
-- **Input.** `CausalGraph`, seed event identifier
-- **Output.** `PropagationReport` — depth, breadth, duration bounds, affected-entity set, feedback loops
-- **Invariants.** Depth and breadth are **separate measures**, never averaged into one figure. Durations are carried as bounds (`DurationBound`), never as point estimates. Traversal is bounded by `MAX_PROPAGATION_DEPTH`, a named constant, never a magic literal.
+- **Input.** A `GraphView` (see module 11) and a seed event identifier. *(Corrected 2026-09-06, for the same reason and in the same commit as module 11's input line.)*
+- **Output.** `PropagationReport` and `PropagationTree` — prd.md §30's seven measures, **none combined**: depth and breadth as separate fields, magnitude keyed by the measurement that produced it and combined under a pack-declared operator, affected entities and affected process instances as separate counts, and route confidence composed under a named function with its path length beside it.
+- **Invariants.** Depth and breadth are **separate measures**, never averaged into one figure. **Magnitude is attributed to the node SET and never to the routes** — `ConsequenceSet` validates its membership unique at construction, which is the no-double-counting guarantee held by a type rather than by a call site (ADR-0061). Traversal is bounded by the pack's `maximum_depth` and `traversal_node_cap`, under the named ceiling `MAX_PROPAGATION_DEPTH`; an absent declaration means no traversal runs and is reported, never defaulted.
 - **Failure modes.** A feedback loop is **a requirement, not a bug** (prd.md §31): it is detected, reported, and traversal terminates. Reaching the depth bound is reported as truncation, never as completion. Partial data: an unreachable effect yields an empty report with the reason, not a zero.
 - **Forbidden from.** Creating an edge. Collapsing a duration bound for computation. Reporting a truncated traversal as exhaustive.
 
@@ -304,12 +345,12 @@ module 9 depends on it and a seam with no stated contract is one every consumer 
 
 ### Module 13 — Counterfactual Simulator · `counterfactual_engine` · L7
 
-- **Responsibility.** Produce a `SimulatedWorld` by applying mutations to a copy of a frozen causal graph.
-- **Input.** `CausalGraph` (base world), `tuple[Mutation, ...]`
-- **Output.** `SimulatedWorld` with `provenance_class = SIMULATED` and an attached assumption statement
-- **Invariants.** **Never writes to the base world.** A null intervention reproduces the base world exactly. Every simulated value carries `SIMULATED` provenance through serialization and into the UI. The output envelope carries the explicit no-unobserved-confounder assumption.
-- **Failure modes.** V1 ships graph-surgery propagation over frozen edges, surfaced as a **plausibility simulation**, not a causal effect estimate — prd.md §33 promises simulation over a graph whose edges are rule- and statistics-derived rather than identified causal effects, and §16 already concedes causality is not proven (OQ-007 default; **requires ADR-0011 before this module is built**). A mutation targeting an absent node is a hard error. Partial data: a mutation on a low-confidence edge propagates, and the low confidence propagates with it.
-- **Forbidden from.** Writing back to history. Presenting a simulated figure as a prediction. Dropping the assumption statement from the envelope. Estimating a causal effect it has no identification argument for.
+- **Responsibility.** Produce a `SimulatedWorld` by applying typed interventions to a copy of the engine's stated causal graph, and state what the answer is worth.
+- **Input.** `PromotedGraph` (base world, via a `STATED` `GraphView`), `tuple[Intervention, ...]`. **Corrected from `CausalGraph` by ADR-0072:** this line predates ADR-0054, which moved promotion into the Causal Graph Builder, and OQ-026, which requires this module to refuse a graph the engine does not stand behind. Module 10's scored graph is admissible only under an explicit `accept_unpromoted=True`, and everything produced under it is disowned.
+- **Output.** `SimulatedWorld` with `provenance_class = SIMULATED`, a `WorldDiff` occurrence by occurrence, a `ValidityAssessment`, and the ledger of every change refused.
+- **Invariants.** **Never writes to the base world** — structurally, not carefully: a world holds `SimulatedEvent` and `SimulatedInstant`, never `Event` or `TimeInterval` (ADR-0068), and `core.immutability.revise` is never called here. A null intervention reproduces the base world exactly, enforced by `SimulatedWorld.interventions` carrying `min_length=1` so no empty hypothetical can be published at all. Every simulated value carries `SIMULATED` provenance through serialization and into the UI. The output envelope carries the explicit no-unobserved-confounder assumption. **Removing one of several contributing causes reduces the outcome and never eliminates it** (ADR-0069): elimination is a re-reachability finding, reduction is what is left over, and the two are counted in separate fields that are never summed.
+- **Failure modes.** V1 ships graph-surgery propagation over frozen edges, surfaced as a **plausibility simulation**, not a causal effect estimate — prd.md §33 promises simulation over a graph whose edges are rule- and statistics-derived rather than identified causal effects, and §16 already concedes causality is not proven (**ADR-0065, closing OQ-007**; the number this line named until 2026-09-07 was reserved at the scaffold and never written — see ADR-0065, which records it). An intervention targeting an absent node is a hard error. An intervention the ontology does not admit — an undeclared transition, an unadmitted process step, an attribute the pack does not declare changeable, or a move that would place a cause at or after its effect — is **refused with an explanation** rather than simulated and flagged (ADR-0066), because every check after an unreachable premise passes on it. Partial data: an intervention on a low-confidence edge propagates, and the low confidence propagates with it under a named composition that can only weaken.
+- **Forbidden from.** Writing back to history. Presenting a simulated figure as a prediction. Dropping the assumption statement from the envelope. Estimating a causal effect it has no identification argument for. Constructing a `CausalEdge` or assigning `INFERRED` — both asserted over the AST by `tests/law/test_simulation_never_writes_back.py`. Returning a clean number where the validity assessment says `EXTRAPOLATION`: the verdict replaces the figure rather than sitting beside it (ADR-0070).
 
 ---
 
@@ -589,7 +630,8 @@ display strings such as `TEST_REQUESTED → "Diagnostic test requested"`.
 | 9 Candidate Cause Generator | **none** — the rule pack is data; LAW-TIME is domain-free |
 | 10 Confidence Scorer | **none** — component names are engine concepts, not domain concepts |
 | 11 Root Cause Analyzer | **none** — ranks on impact and confidence |
-| 12 Propagation Analyzer | **none** — graph traversal |
+| 12 Propagation Analyzer | **none** — graph traversal; every bound and every combination operator is a pack declaration |
+| *pattern miner (not a module)* | **none** — counts shapes in a type projection without reading a type name |
 | 13 Counterfactual Simulator | **none** — graph surgery |
 | 14 Intervention Optimizer | **none** — reads `cost.yaml` |
 | 15 Explanation Generator | **none** — reads `labels.yaml` through the `PresentationLabels` port |

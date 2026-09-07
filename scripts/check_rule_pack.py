@@ -62,7 +62,7 @@ from causalog.rule_engine import (  # noqa: E402
     render_markdown,
     rule_pack_hash,
 )
-from causalog.rule_engine.dsl import RulePackSpec  # noqa: E402
+from causalog.rule_engine.dsl import RULE_PACK_SCHEMA_VERSION, RulePackSpec  # noqa: E402
 
 
 def _ontology_path(domain: str) -> Path:
@@ -245,7 +245,11 @@ _BASE_RULE = {
 def _pack(*rules: dict[str, object]) -> dict[str, object]:
     """Build a minimal, domain-free pack document around the given rules."""
     return {
-        "rule_pack_schema_version": "1.0.0",
+        # Read from the DSL rather than pinned as a literal. A hard-coded version here goes
+        # stale on the next additive schema bump and the self-test then fails for a reason
+        # that has nothing to do with what it checks -- which is how a self-test comes to be
+        # disabled. The self-test's job is to prove the CHECK works, not to assert a version.
+        "rule_pack_schema_version": RULE_PACK_SCHEMA_VERSION,
         "rule_pack_id": "selftest",
         "rule_pack_version": "1.0.0",
         "ontology_pack": "selftest",

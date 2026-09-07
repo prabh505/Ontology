@@ -3321,3 +3321,2550 @@ is tracked there rather than given a new number.
 
 ### Reversibility cost
 **Low.** The policy is one comparison in one module; the report is additive.
+
+---
+
+## ADR-0048 — `CandidateEdge` is a new `draft` core type with no confidence field; `CausalEdge` ownership moves to module 10
+
+- **Date:** 2026-09-02
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** Candidate Cause Generator (9), Confidence Scorer (10)
+- **Affects interfaces:** `causalog.core.types.candidate_edge.CandidateEdge` (new, `draft`);
+  `causalog.core.types.causal_edge.CausalEdge` (unchanged, still **frozen**, registry owner
+  corrected); `IdentifierPrefix.EVIDENCE_ITEM` (new, additive)
+
+### Context
+Two governance documents disagreed about module 9's output, and neither was obviously wrong.
+
+`docs/architecture.md` §Module 9 states the output is `tuple[CandidateEdge, ...]` and names
+`CandidateEdge` four times. **No such type existed anywhere in the codebase.**
+
+`CONTEXT.md` §6 instead registers `CausalEdge`, `CausalEdgeKind` and `CausalEdgePayload` as
+module 9's, **frozen** by ADR-0022 and ADR-0025.
+
+The two cannot both be satisfied, because `CausalEdge` requires a `ConfidenceVector` and
+module 9 is forbidden from assigning confidence — by `docs/architecture.md` §Module 9's own
+"Forbidden from" line, and by the design principle the whole module exists to express:
+generation and judgement are separate concerns, in separate modules.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Module 9 emits `CausalEdge` with a placeholder zero-support `ConfidenceVector` | Rejected. A placeholder vector is indistinguishable downstream from a scored one, and LAW-EVIDENCE explicitly says an edge with no supporting component gets "an explicit zero-support vector, not an empty one" — which is a statement about module 10's output, not a licence for module 9 to manufacture one. It would also put a number a reader can see onto an artifact nobody has judged |
+| B | Relax `CausalEdge.confidence` to `ConfidenceVector \| None` | Rejected. Changing a frozen type to accommodate an unbuilt module is the assertion-not-specification error OQ-009 exists to prevent, and `None` would then be legal on module 10's output too — where it is a defect |
+| C | New `draft` core type `CandidateEdge` carrying no confidence field at all; `CausalEdge` untouched and constructed by module 10 | **Chosen** |
+
+### Decision
+`causalog.core.types.candidate_edge.CandidateEdge` is added as a `draft` `core` type. It
+carries `candidate_edge_id`, `generator_id`, `source_event_id`, `target_event_id`,
+`payload`, `evidence`, `provenance_class`, `temporal_verdict`, `temporally_unverifiable`
+and `run_id` — **and no confidence field and no propagation weight.**
+
+That absence is the entire point. "Module 9 never scores" becomes structural rather than a
+rule someone must remember: a generator cannot assign confidence because the artifact it
+produces has nowhere to put it. The same reasoning ADR-0022 applies to payload types — the
+required data is required *by the type* — applied to data that must be **absent**.
+
+Three consequences of the shape, each deliberate:
+
+1. **The five-payload union IS reused**, unchanged and imported from the frozen
+   `causal_edge` module. One taxonomy for prd.md §26's five categories, not a second and
+   weaker one. This is the same argument ADR-0044 makes about `RuleKind`.
+2. **`generator_id` is part of the identity, not a label beside it.** The address recipe is
+   `source_event_id | target_event_id | edge_kind | generator_id`, and `CausalEdge.address`
+   deliberately omits the last field. The two recipes differ **by design**: a candidate is
+   one generator's proposal, a causal edge is the single scored claim module 10 assembles
+   from every proposal over that pair. Two artifacts with two lifetimes get two addresses.
+3. **`CandidateEdge.between` mirrors `CausalEdge.between` exactly** — takes the two `Event`
+   objects, stamps the verdict, raises on `VIOLATION`, offers no `skip` argument. It also
+   inherits the DEF-0002 boundary verbatim: a stored verdict cannot be re-checked from the
+   artifact, because the artifact holds identifiers rather than intervals. That limit is
+   restated in the type's own docstring rather than quietly inherited.
+
+**The `CausalEdge` registry row's owner is corrected from module 9 to module 10.** Module 10
+is what actually constructs one — `docs/architecture.md` §Module 10 already says its output
+is a `CausalGraph` of "edges carrying `ConfidenceVector`", and it is already named as "the
+only module permitted to write `CAUSES`". The type itself is untouched: no field moves, no
+recipe changes, nothing is unfrozen. Only the registry attribution was wrong.
+
+`IdentifierPrefix` gains `EVIDENCE_ITEM = "evi"`, purely additively, exactly as ADR-0028
+added `ONTOLOGY` and ADR-0035 added `MAPPING`. `EvidenceItem` carried a free-form identifier
+because nothing had yet needed to *mint* one; module 9 mints thousands per run, and an
+unaddressed item is one a rerun cannot reproduce. **No existing address recipe moves.**
+
+### Consequences
+**Positive.** The separation of generation from judgement is enforced by the type system
+rather than by review. `CausalEdge` stays frozen and untouched. Module 10's input type is
+now real rather than aspirational, and `docs/architecture.md` §Module 10's declared input
+(`tuple[CandidateEdge, ...]`) resolves for the first time.
+
+**Negative, and accepted.** There are now two edge-shaped types in `core`, and a reader
+meeting them for the first time must learn which is which — the docstrings lead with exactly
+that distinction. A candidate and its eventual causal edge do **not** share an identifier, so
+tracing one to the other is a join on `(source, target, kind)` rather than an equality on
+ids; that is the honest consequence of the multigraph, since several candidates collapse
+into one edge and a shared identifier would have to pick a winner.
+
+`CandidateEdge` is `draft`, not frozen. It has exactly one consumer and that consumer
+(module 10) does not exist yet. Freezing it now would be the error OQ-009 exists to prevent,
+in a new place — the same reasoning that kept `RulePack` `draft` in ADR-0044.
+
+### Reversibility cost
+**Low to reverse, medium to alter.** Nothing persists a `CandidateEdge` today (forbidden
+edge F4; no orchestration pipeline exists), so the type has no stored instances anywhere.
+Altering the address recipe after module 10 lands would be an `engine_version` bump and a
+full re-derivation, as any address change is.
+
+---
+
+## ADR-0049 — Module 9's generator parameters are declared in the rule pack, at `rule_pack_schema_version` 1.1.0
+
+- **Date:** 2026-09-02
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** Candidate Cause Generator (9), Rule Engine
+- **Affects interfaces:** `causalog.rule_engine.dsl.CandidateGenerationSpec`,
+  `ProximityWindowSpec` (both new); `RulePackSpec.candidate_generation` (new, defaulted)
+- **Affects contracts:** `rule_pack_schema_version` 1.0.0 → 1.1.0; DataCo
+  `rule_pack_version` 1.0.0 → 1.1.0; `rule_pack_hash` `rul:f4aeace1280015c4` →
+  `rul:29f44bd857e3963e`, and therefore **`run_id`**
+
+### Context
+Module 9's temporal-proximity generator needs a window per sequenced event-type pair. Its
+structural generator needs a hop bound; its two counting generators need a support floor and
+a lift floor; the explosion control needs a per-effect cap; and every generator needs an
+authored weight for the `EvidenceItem` it mints.
+
+**Nothing in the system declared any of them.** The ontology pack DSL declares processes,
+lifecycles, participants, attributes and measurements — no pair-scoped window. The only
+pair-scoped window anywhere was `rule_engine.dsl.TemporalWindow`, inside a rule body.
+
+Writing any of these numbers into `causal_engine/` was not an option. They are domain policy
+by every test the project already applies: they differ per domain, they decide which
+hypotheses the engine will entertain, and a number written into engine code **does not move
+when the ontology is swapped** — which is LAW-DOMAIN defeated by a value rather than by a
+word, the residual `docs/architecture.md` §1.5 states and `scripts/check_metrics_are_declared.py`
+rule 4 exists to refuse.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Add a `causal_windows` namespace to the **ontology** pack DSL | Rejected. The pack schema is **frozen** at 1.0.0 (ADR-0026), so this is an ADR plus a coordinated update of every consumer; and adding any key changes `to_canonical_json(resolved_pack)`, so `ontology_hash` moves for all three packs, `dataset_version` moves with it, and the pinned reference file is re-imported. That is risk R-19 realised deliberately, for a declaration that is not ontological anyway — see the Decision |
+| B | A sixth extension seam, `causal_params.yaml`, with its own loader and hash | Rejected. `RunKey` is frozen at five inputs, so a sixth hash must be folded into an existing one — recreating exactly the composite-version problem R-19 documents, for a file with one consumer |
+| C | A `candidate_generation` namespace in the **rule pack**, additive at schema 1.1.0 | **Chosen** |
+
+### Decision
+`RulePackSpec` gains one optional field, `candidate_generation: CandidateGenerationSpec`,
+defaulted to an empty spec. `rule_pack_schema_version` moves to 1.1.0. The change is
+**additive**: a pack authored against 1.0.0 still loads, and gets an empty spec.
+
+The rule pack is the right home on the merits, not merely the cheap one. A proximity window
+is a claim that *an effect of this type, if it has a cause of that type, follows it within
+this long*. That is a belief about how a domain behaves — causal knowledge — and a rule pack
+is precisely the artifact ADR-0045 defines as holding policy about facts rather than facts.
+The ontology describes what a domain **is**; this describes what someone believes about how
+it **behaves**. Three further properties follow for free: the pack already participates in
+`run_id`, so editing a window mints a new Run; it already carries `KnowledgeProvenance` and
+per-rule `rationale`, so the same justification discipline applies unchanged; and it is
+still `draft`, so no freeze is broken.
+
+**Every parameter is optional, and an absent parameter makes its generator `NOT_RUNNABLE`
+rather than empty.** This is the load-bearing half of the decision. `ontology_runtime`
+introduced a third severity for exactly this failure — a check that could not run reads
+identically to a check that passed — and OQ-014 and DEF-0001 are both instances of it.
+A generator whose window is undeclared did not run; reporting it as "0 candidates" would be
+the same lie in a new place. `GeneratorStatus.NOT_RUNNABLE` and
+`GeneratorTally.requirement` carry the distinction into the report, which names what each
+switched-off generator would need.
+
+**`EvidenceItem.strength` is authored per generator, never defaulted.** `ProximityWindowSpec`
+carries a required `evidence_strength`; the other generators read
+`shared_entity_strength`, `shared_identifier_strength`, `structural_path_strength`,
+`historical_frequency_strength` and `statistical_association_strength`, and a generator whose
+weight is undeclared is `NOT_RUNNABLE`. A schema default here would be a judgement wearing a
+default's clothing — module 9 is forbidden from assigning one, and "0.5 because the field
+needed a value" is exactly the unexplained number prd.md §49 forbids. The rule-based
+generator needs no such field: it uses the firing rule's own `base_strength`, which its
+author already wrote down.
+
+The DataCo pack declares all of them, with a `rationale` on every window. The hospital pack
+declares **none**, deliberately: it has no dataset behind it, so a width there would be a
+number nobody could justify, and its silence exercises the other half of the contract.
+
+### Consequences
+**Positive.** No threshold, width, bound or weight appears as a literal in `causal_engine/`;
+`scripts/check_metrics_are_declared.py` stays clean over the package with no allowlist entry.
+Every number a reader sees is traceable to a pack line with a written justification. Swapping
+the domain swaps them all.
+
+**Negative, and accepted.** `rule_pack_hash` moved, so `run_id` moved, so every artifact
+derived under the old Run is scoped to a different one. That is ADR-0013 working as designed
+and was the explicitly stated cost of putting these in an input to `RunKey` — but it means
+declaring a proximity window is not a free edit, and a pack author must expect a
+re-derivation.
+
+**The widths are not calibrated, and R-16 covers them.** Each is bounded by something the
+pack already states — an adjacency in `ORDER_TO_DELIVERY.canonical_sequence`, or an existing
+rule's window over the same sequenced pair — and **none** was measured against observed
+inter-arrival times, because no such measurement has been made. They are the same class of
+declaration as a rule's `base_strength`: authored, inspectable, revisable, and unvalidatable
+against a ground truth that does not exist. Every rationale says so.
+
+### Reversibility cost
+**Low.** The namespace is additive and defaulted; removing it removes five generators and
+leaves the rule-based one working. Moving it to the ontology pack later is option A's cost,
+unchanged and still available.
+
+---
+
+## ADR-0050 — The per-effect cap selects round-robin across generators, because every plausibility ordering is a ranking
+
+- **Date:** 2026-09-02
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** Candidate Cause Generator (9)
+- **Affects interfaces:** `causal_engine.candidate_cause_generator.graph.TruncationRecord` (new)
+
+### Context
+A single effect event in a dense process instance attracts a candidate from every generator
+for every prior event. prd.md §27 asks for a candidate graph, not for the cross product, and
+an unbounded graph is one nobody can read and module 10 cannot score in reasonable time.
+
+So there is a per-effect cap. The question is **which candidates survive it**, and every
+intuitive answer is wrong in the same way.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Closest in time first | Rejected. Temporal proximity is one generator's evidence kind; using it as the selection key promotes that generator's criterion into a global ranking, and it is a *plausibility* judgement — module 10's and module 11's, not this module's |
+| B | Highest `EvidenceItem.strength` first | Rejected, and worse than A: it ranks on an authored weight the pack calls explicitly "not a confidence", turning a declaration into a decision |
+| C | Most generators agreeing first | Rejected. Agreement across generators is one of the strongest signals module 10 has, and consuming it here to decide truncation spends it before the module that needs it ever sees it |
+| D | Round-robin across generators in canonical `generator_id` sequence, then by `(source_event_id, edge_kind)` | **Chosen** |
+| E | No cap | Rejected. The failure is not hypothetical — an anchor entity in every event of an instance makes the candidate count quadratic in that instance |
+
+### Decision
+When an effect exceeds `per_effect_candidate_cap`, candidates are taken **one per generator
+in canonical `generator_id` sequence, repeatedly**, until the cap is reached; within one
+generator, in the already-canonical `(source_event_id, edge_kind)` sequence.
+
+The policy is chosen for what it **refuses** to do. A, B and C all rank candidates by
+plausibility, and a module documented as "forbidden from ranking" that ranks its survivors
+has not stopped ranking — it has stopped *saying* it ranks, which is worse, because the
+judgement is then encoded in the graph and declared nowhere. Round-robin is **fair
+allocation, not assessment**: it starves no generator, it makes no claim about which
+survivors are better, and it is fully determined by a sequence that is sorted rather than
+authored.
+
+**Nothing is silently dropped.** Every truncation emits a `TruncationRecord` naming the
+effect, the cap, the proposed and retained counts, and the count dropped **per generator** —
+per generator because the question a reader asks on seeing a truncation is "did this cost me
+my rule-based candidates or only my proximity ones", and one total cannot answer it. Each
+record checks its own arithmetic at construction and `CandidateGraph` checks the run's
+(`retained + truncated == admitted`), raising rather than publishing a report whose numbers
+disagree with themselves — the treatment module 1 already gives
+`rows_read == rows_clean + rows_quarantined`.
+
+### Consequences
+**Positive.** The cap cannot become a covert ranking. Truncation is observable per effect and
+per generator. Determinism is unaffected: the policy reads only sorted sequences.
+
+**Negative, and accepted.** Round-robin will sometimes drop a candidate a human would have
+kept — a rule-based proposal with a strong authored rationale can be truncated while a
+proximity proposal survives, because each generator gets one slot before any gets two. That
+is the honest cost of refusing to rank here, and it is visible: the `TruncationRecord` names
+the rule-based drop. If it proves damaging, the answer is a **larger cap** declared in the
+pack, or a ranking module reading the pre-cap graph — not a plausibility key smuggled into
+this one.
+
+### Reversibility cost
+**Low.** The policy is one loop in `graph.py`, and the records that report it are additive.
+
+---
+
+## ADR-0051 — Confounder awareness is structural flagging, emitted as a separate artifact, and resolves nothing
+
+- **Date:** 2026-09-02
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** Candidate Cause Generator (9)
+- **Affects interfaces:** `causal_engine.candidate_cause_generator.confounding.ConfoundingFlag`,
+  `ConfoundingStructure` (both new)
+- **Affects risks:** R-05 (hidden confounders), R-06 (correlation mistaken for causation)
+
+### Context
+prd.md §59 names hidden confounders as a risk that "must be explicitly surfaced to users".
+`CONTEXT.md` R-05 records it as "cannot be mitigated, only disclosed", with the mitigation
+listed as a no-unobserved-confounder assumption statement on every `INFERRED` and `SIMULATED`
+output — a sentence, attached at module 10 and beyond.
+
+A sentence on every output is disclosure of the *general* possibility. It says nothing about
+**where** in a particular graph the possibility actually bites, and a user reading it on
+every edge learns to skip it.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Keep the blanket assumption statement and add nothing | Rejected. It is already the plan for modules 10+ and it does not locate anything; a warning that appears everywhere is read nowhere |
+| B | Detect the structures and **prune** the confounded candidate | Rejected outright. That is resolution, it requires an identification argument V1 does not have (OQ-007), and a module forbidden from ranking is equally forbidden from de-ranking |
+| C | Detect the structures and **down-weight** the confounded candidate | Rejected. Down-weighting is scoring under another name, and module 9 assigns no weights |
+| D | Detect the structures and **flag** them, as a separate artifact that mutates nothing | **Chosen** |
+
+### Decision
+`detect_confounding` walks the gated, capped candidate multigraph for two structures and
+emits `ConfoundingFlag` values that reference candidate identifiers and **mutate nothing**:
+
+* **`POSSIBLE_MEDIATION`** — `X→Z` exists and so do `X→Y` and `Y→Z`. The direct claim may be
+  carried through Y. Flagged on the `X→Z` candidates.
+* **`POSSIBLE_COMMON_CAUSE`** — `X→Y` and `X→Z` exist and so does `Y→Z`. The `Y→Z`
+  association may be explained by the shared parent X. Flagged on the `Y→Z` candidates.
+
+**One closed triangle emits both flags, and that is correct rather than redundant.** Given
+all three edges, there are two readings and *the data cannot separate them*. Emitting one and
+suppressing the other would be choosing between them, which is the resolution this module
+explicitly cannot perform. They are two flags on two different pairs and both are kept.
+
+Every flag carries `CONFOUNDING_UNRESOLVED_NOTICE` verbatim — fixed text, so it cannot be
+softened per flag — stating that the flag makes a structure visible without resolving it,
+**and that the absence of a flag is not evidence of no confounding.** That second clause is
+the one most likely to be dropped and the one that matters most: an unobserved common cause
+leaves no shape at all in a graph built from observed events, so this detector is blind to
+precisely the confounders R-05 is actually about.
+
+### Consequences
+**Positive.** R-05 moves from "disclosed in prose" to "disclosed and, where the graph shows
+it, located". prd.md §59's "explicitly surfaced" requirement gains a mechanism. Module 10
+receives the flags as input and can decompose confidence knowing which claims sit inside a
+triangle. Detection is deterministic, bounded by the already-applied per-effect cap, and
+involves no arithmetic and no threshold.
+
+**Negative, and accepted.** The detector sees only structures the candidate graph contains,
+which means it sees only **observed** common causes. The hidden confounders R-05 names are by
+definition absent from the graph, so a run with zero flags has learned nothing about them.
+This is stated in every flag and in the report's own "no flags" branch, because a reader who
+takes an empty flag list as reassurance has been misled by a feature built to prevent exactly
+that.
+
+A triangle is also not evidence of confounding — it is the shape under which confounding and
+a direct effect are **indistinguishable in these data**. A user who reads a flag as an
+accusation will over-discount a real direct effect. The notice says so; nothing else can.
+
+### Reversibility cost
+**Low.** The flags are a separate artifact, referenced by identifier and mutating no edge.
+Removing them removes a report section and changes no candidate.
+
+---
+
+## DEF-0005 — `admissible_slice` documented a degenerate case it did not implement, and raised instead
+
+- **Date:** 2026-09-02
+- **Status:** fixed
+- **Class:** C (a documented behaviour that nothing exercised, and which was therefore untrue)
+- **Found by:** module 9, on the first real evaluation of the rule pack over the reference dataset
+- **Affects modules:** Rule Engine
+
+### What was wrong
+`rule_engine.index.FactIndex.admissible_slice` has carried this paragraph since the rule
+engine shipped on 2026-09-01:
+
+> A bucket holding an event with `UNKNOWN` precision has an unbounded `max_span`, so the
+> lower cut degenerates to zero and that bucket is scanned from its start. That is correct
+> and is the honest cost of an unplaced event: nothing can be excluded on the strength of
+> bounds the source never recorded.
+
+The reasoning is right. **The code did the other thing.** `bisect_left(keys, cause_earliest - span)`
+raised `OverflowError: date value out of range`, because `UNKNOWN_EARLIEST` is
+`datetime.min` and the span across an unbounded interval is the whole representable range.
+
+The evaluator did not scan the bucket from its start. It crashed.
+
+### Why nothing caught it
+No test placed an `UNKNOWN`-precision event into a bucket a rule matched **as its
+consequent**. That last clause is the whole reason it hid: `admissible_slice` bisects the
+*consequent* bucket, so an unplaced ANTECEDENT does not reproduce it — the span it is
+shifted by comes from the other bucket, which is placed and narrow. Only an unplaced
+consequent blows the span up. Every rule-engine test used placed intervals on both ends.
+
+It surfaced the moment module 9 became the rule engine's first consumer over real events,
+because the DataCo pack derives twenty event types and many of their instances carry no
+placed instant at all — 84% of the retained candidates in the first run are temporally
+unverifiable, so unplaced consequents are not an edge case in this dataset, they are the
+common case.
+
+**This is the DEF-0001 shape, third instance.** A claim in a docstring is worth what
+something executes. `CONVENTIONS.md` §1 already says a check that has never been observed to
+reject has not been tested; the same holds for a documented behaviour that has never been
+observed to happen.
+
+### Fix
+`_saturating_shift` performs both cuts saturating at the representable extremes instead of
+raising. Saturating is the correct arithmetic rather than a guard clause: `UNKNOWN_EARLIEST`
+and `UNKNOWN_LATEST` MEAN "nothing is excluded", so a cut that runs off the end of
+representable time is a cut that excludes nothing — exactly the degenerate case the
+docstring describes.
+
+Pinned by
+`tests/unit/rule_engine/test_evaluate.py::test_an_unplaced_event_in_a_matched_bucket_does_not_crash_the_index`,
+which **was observed to fail with the original `OverflowError` before the fix** and which
+places the unplaced event on the consequent side, with a comment saying why that side.
+
+### Consequence, disclosed
+The fix makes the documented behaviour real, and the documented behaviour is expensive: a
+bucket holding one unplaced event is scanned in full for every antecedent, so evaluation
+over that type pair is quadratic. Measured on a 150-row slice: 20,328 firings from 1,224
+events. That is the pack's own complexity note working as written — "the evaluation is
+quadratic because the RULE is quadratic … is a property of the pack" — now reachable rather
+than fatal. It is why `scripts/build_candidate_graph.py` is bounded by default and says so.
+
+---
+
+## DEF-0006 — the candidate address collided when one generator made two claims over one pair
+
+- **Date:** 2026-09-02
+- **Status:** fixed
+- **Class:** C (a contract too weak for its own consumer, caught by an invariant rather than by a test)
+- **Found by:** `CandidateGraph`'s own totals reconciliation, on the reference dataset
+- **Affects modules:** Candidate Cause Generator (9)
+
+### What was wrong
+`CandidateEdge.address` was first written as
+`source_event_id | target_event_id | edge_kind | generator_id`, mirroring
+`CausalEdge.address` plus the generator.
+
+That is right for `CausalEdge`, which is one scored edge per (pair, kind). It is wrong here.
+One generator legitimately reaches one pair more than once: the DataCo pack authors
+`R-DCO-DISPATCH-MISS-DELAYS` and `R-DCO-TRANSIT-DELAYS` over the same sequenced type pair
+**on purpose**, and its own rationale calls that "exactly the candidate graph prd.md §27 asks
+for". Both fire, both propose `DIRECT`, and under a kind-only recipe both got one address.
+
+### How it was caught
+Not by a test. By `TruncationRecord._check_arithmetic`, on real data:
+
+```
+TruncationRecord for evt:015bd166df4b2162 does not reconcile:
+retained 20 + dropped 137 != proposed 159
+```
+
+The self-check written to make truncation honest is what found the identity defect. That is
+the argument for arithmetic invariants over assertions: nobody had thought to test this case,
+and the invariant did not need anybody to.
+
+### Fix
+Two halves, and both are needed:
+
+1. **The whole payload participates in the address**, not just its kind. Two `CONDITIONAL`
+   claims under different conditions, or two `CONTRIBUTING` claims in different joint groups,
+   are different claims and now get different addresses.
+2. **Proposals with an IDENTICAL payload are merged** into one candidate carrying every
+   justification, on `(cause, effect, generator, payload)`. Two rules proposing the same
+   direct claim are one hypothesis with two justifications, and LAW-EVIDENCE wants both
+   attached rather than one silently winning.
+
+`GeneratorTally.merged_count` reports the fold, so `proposed == merged + admitted + rejected`
+holds per generator and a rule-heavy pack is visibly justifying few hypotheses many ways
+rather than losing candidates. Pinned by three tests in `test_caps_and_report.py`, including
+the per-generator reconciliation identity.
+
+---
+
+## DEF-0007 — the shared-identifier generator matched on how events were made, not on the domain
+
+- **Date:** 2026-09-02
+- **Status:** fixed
+- **Class:** B (a generator producing a large volume of meaningless output, invisible without the per-generator report)
+- **Found by:** the Candidate Graph Report's own per-generator counts, on the reference dataset
+- **Affects modules:** Candidate Cause Generator (9)
+
+### What was wrong
+`EvidenceKind.SHARED_IDENTIFIER` is documented as "an identifier in common that is not itself
+a participant". The first draft read all of `Event.metadata`, excluding values that named a
+participant.
+
+But `Event.metadata` does not carry domain identifiers. It carries the Event Generator's
+traceability pairs — `observation_mode`, `emission`, `occurred_at_policy`
+(`extraction/event_generator/emit.py::_metadata`), which that function's own docstring
+describes as answering "how did this get made". Nothing in the metadata shape distinguishes
+those from an identifier.
+
+So the generator proposed a candidate for **every pair of events sharing an observation
+mode**: 87,446 proposals over a 150-row slice, *exactly* matching the shared-entity
+generator's count, none of which said anything about the domain.
+
+### How it was caught
+By the report the task required: two generators showing byte-identical proposal counts is
+not a coincidence, and it is visible only because the counts are printed per generator. The
+`looks_degenerate` flag did **not** fire — 87,446 is 87.2% of the available pairs, under the
+90% saturation share — so the flag alone would have missed it. The side-by-side comparison is
+what showed it.
+
+### Fix
+The pack declares `candidate_generation.identifier_metadata_keys`: which metadata keys carry
+a domain identifier. A pack declaring none switches the generator off and is told which
+declaration it is missing.
+
+**The DataCo pack declares none, deliberately**, and the report now lists
+`shared_identifier` under NOT_RUNNABLE with that requirement. DataCo's `Event` carries no
+non-participant identifier — every identifier the source records becomes a participant entity
+through the mapping's identity bindings, which is the shared-entity generator's territory.
+That is a real gap in this dataset reported as a gap, rather than 87,446 meaningless
+hypotheses reported as findings.
+
+### Why this is recorded rather than quietly corrected
+The generator was wrong in the specific way this module is built to expose: it produced a
+great deal of output that looked like signal. Without the per-generator counts it would have
+shipped, module 10 would have scored 87,446 edges resting on `observation_mode`, and the
+first person to notice would have been a user asking why two unrelated events are linked.
+
+---
+
+## ADR-0052 — Confidence aggregation: eight components, two of them gates, and a strategy name that determines the whole arithmetic
+
+- **Date:** 2026-09-03
+- **Status:** accepted
+- **Supersedes:** — (extends ADR-0009, which stands unchanged)
+- **Affects modules:** Confidence Scorer (10); Root Cause Analyzer (11) and everything downstream reads the result
+- **Affects interfaces:** `core.aggregation.gated_weighted_mean_v1`, `V2_ADDEND_WEIGHTS`,
+  `TEMPORAL_CEILING_ANCHORS`, `CONTRADICTION_CEILING_ANCHORS`, `ceiling_at`,
+  `AGGREGATOR_COMPONENT_NAMES` (all new); `confidence_schema_version` 1.0.0 → 2.0.0
+- **Affects risks:** R-06 (correlation mistaken for causation), R-14 (UNDETERMINED dominance),
+  R-16 (uncalibrated declared thresholds)
+
+### Context
+ADR-0009 established that confidence is a decomposition and that the rollup names the
+function that produced it. It left three questions open that only became answerable once a
+module actually had to score real edges:
+
+1. **How many components, and which?** prd.md §49 names six. Two requirements cannot be
+   expressed in those six: that independent evidence counts for more than repeated evidence,
+   and that counter-evidence lowers a score.
+2. **What does an absent component mean?** `weighted_mean_v1` renormalizes over the
+   components supplied, so an absent one abstains. That is right for a general-purpose
+   aggregator and wrong for a scorer, where "we did not look" must cost something.
+3. **Is temporal support just another addend?** If it is, enough correlation outvotes it,
+   and the engine will report a confident causal claim between two events whose precedence
+   nobody established.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Keep the six §49 names; fold diversity into `evidence_count` and contradiction into `rule_support` | Rejected. A `rule_support` containing a hidden penalty is a component whose name no longer describes it, and a reader could not tell a weakly-supported claim from a contradicted one. One number, one home |
+| B | Revise `weighted_mean_v1` in place to eight names | Rejected outright. Every artifact already naming it must still recompute to the same scalar; that is the entire value of putting the function name in the vector. Revising a shipped name silently reinterprets every stored score |
+| C | Eight names under a **new** strategy registered beside the old one, with temporal and contradiction as **gates** | **Chosen** |
+| D | As C, but with noisy-OR as the aggregator | Rejected, and the reason is recorded below because it is easy to reach for |
+
+### Decision
+
+**Eight components at `confidence_schema_version` 2.0.0.** The six of prd.md §49, plus
+`evidence_diversity` and `contradiction_freedom`. `weighted_mean_v1`, `minimum_v1` and
+`DEFAULT_COMPONENT_WEIGHTS` are untouched and stay registered; 2.0.0 arrives as
+`gated_weighted_mean_v1` beside them.
+
+**Two of the eight are gates, not addends.**
+
+```
+scalar = min(
+    weighted_mean(rule, historical, statistical, diversity, count, connectivity),
+    ceiling(temporal_support,      TEMPORAL_CEILING_ANCHORS),
+    ceiling(contradiction_freedom, CONTRADICTION_CEILING_ANCHORS),
+)
+```
+
+A claim that A caused B without knowing A came first is not a weak causal claim; it is not a
+causal claim. Precedence therefore caps rather than contributes, and no quantity of rule or
+statistical support lifts an edge past its ceiling. Contradiction caps on the same argument
+and more steeply — active counter-evidence is a positive finding against the claim, whereas
+unverifiable time is only an absence.
+
+**Monotonicity, which the gating had to preserve and does.** A weighted mean is
+non-decreasing in each addend. Each ceiling is non-decreasing in its gate, because the
+anchors ascend in both coordinates. The minimum of non-decreasing functions is
+non-decreasing. Therefore raising any one of the eight components can never lower the
+scalar. Property-tested in `tests/unit/core/test_confidence_aggregation.py`.
+
+**Every ceiling sits at or above its own input.** Not decoration: the existing property that
+a rollup never falls below its weakest component is asserted over *every* registered
+aggregator, and a ceiling that capped below the component driving it would break it.
+
+**`contradiction_freedom`, not `contradiction_penalty`.** Every component rises with
+support. A subtracted term would be the one component where a larger number meant a worse
+claim, would force the strategy to know which of its inputs to negate, and would not be
+monotone. So the component scores *freedom* from contradiction: 1.0 means nothing argues
+against the claim. The inversion is stated in the component's docstring, in every
+explanation it produces, and in the report.
+
+**An absent component does not abstain here.** `gated_weighted_mean_v1` requires all eight
+names and refuses an incomplete vector. That is safe only because the scorer never omits
+one: a component whose data is missing is emitted at zero and marked `missing`. So absence
+genuinely costs score, the aggregator never has to guess which of two meanings an absent
+name carried, and the cost appears in the report rather than being inferable from a gap.
+
+**Why noisy-OR is not registered.** Two independent components at 0.5 roll up to 0.75 under
+it — support the inputs do not contain. `test_the_rollup_never_exceeds_the_strongest_component`
+asserts the opposite over every registered aggregator, and that property is worth more than
+the ranking noisy-OR would give. It *is* used **inside** `rule_support`, where two authored
+rules reaching one conclusion by different reasoning genuinely do corroborate. The two levels
+are different questions and are answered differently, deliberately.
+
+**`AGGREGATOR_COMPONENT_NAMES`.** The registry stopped being uniform the moment a second
+schema version landed. A caller — and a property test — must be able to ask an aggregator
+what it accepts rather than discover it by being refused, which would let a test pass for the
+wrong reason.
+
+### The weights are an editorial judgement and are recorded as one
+`V2_ADDEND_WEIGHTS` is `rule_support` 0.28, `historical_support` 0.17,
+`statistical_support` 0.17, `evidence_diversity` 0.16, `evidence_count` 0.12,
+`graph_connectivity` 0.10. Nothing fitted them, because this repository holds **no labelled
+causal ground truth** to fit them against. The same admission `DEFAULT_COMPONENT_WEIGHTS`
+already makes, and the confidence report's first section repeats it before any number.
+
+Diversity is weighted above raw count deliberately: two independent lines of reasoning say
+more than one line repeated, and weighting volume higher would reward a generator that fires
+many times over a generator that agrees with another.
+
+### Consequences
+**Positive.** prd.md §49's "never a single unexplained number" is structural rather than
+aspirational: eight named components, an explanation per component carrying its arithmetic
+and its caveats, and a strategy name from which the whole scalar can be recomputed. The
+temporal gate makes LAW-TIME visible in the score rather than only in a flag. Monotonicity
+makes the vector safe to hand a user asking what would raise the number.
+
+**Negative, and expected.** On the 150-row reference slice **no edge scores above 0.40** and
+**none is promoted to `INFERRED`**. The temporal gate binds on 48.8% of edges,
+`graph_connectivity` is missing on 100% of them, and `rule_support` on 75.8%. Every scored
+edge lands in the `WEAK` band. That is the honest consequence of scoring a day-granular
+source with module 7 unbuilt, and it is the finding — not a reason to soften the gate
+(`CONTEXT.md` R-14, and R-16 on declared-but-uncalibrated thresholds).
+
+**The top of the distribution is a plateau, not a ranking.** 310 edges tie at exactly
+0.400000 because the temporal ceiling put them all there. Any "top ten" is a canonical slice
+of that tie, and the report says so before printing one — a gate that caps many edges
+destroys the ordering among them, which is a real cost of gating and is disclosed rather
+than presented as a ranking.
+
+**A second strategy is now permanently maintained.** `weighted_mean_v1` must keep computing
+what it computed. That is the cost of making stored scalars recomputable, and it was paid
+knowingly.
+
+### Defect found and fixed while building this, recorded rather than tidied away
+The first implementation of `ceiling_at` returned an unquantized value. The scalar is stored
+at six decimal places, so on interpolated ceilings the cap did not hold: an interpolation
+landing on `0.44738999999999995` against a scalar rounding to `0.44739` puts the stored
+number **5.5e-17 above its own ceiling**. Measured at **3.8% of random component vectors**.
+
+The magnitude is irrelevant and the class is not. A hard cap that a rounding can step over is
+a soft cap with better documentation, and the invariant this ADR states — the gate is a
+ceiling, not a strong hint — would have been false as written. `ceiling_at` now quantizes,
+so both sides of the comparison sit at the resolution the system actually stores.
+
+It was found by `test_the_scalar_never_exceeds_either_ceiling`, a property test, on a
+generated vector no example-based test would have chosen. That is the argument for
+property-testing the aggregation rather than pinning a few worked examples.
+
+### A second defect, of this module's own characteristic kind
+`statistical_support` originally discounted for sample size on `table.instances` — the whole
+contingency table — rather than on `both`, the cell the ratio's numerator actually rests on.
+On the reference slice that is 733 against a declared prior of 20, so the term was **0.973
+for every single pair**: a small-sample penalty that penalized nothing, sitting directly
+underneath a caveat that correctly announced "SMALL SAMPLE" whenever `both < prior`.
+
+**A number and its own caveat disagreeing is the exact defect this module exists to
+prevent**, and it shipped for one run. Both lift-reading components now discount on `both`,
+and they are told apart by *how they weight the two factors* rather than by which sample
+they read:
+
+```
+historical_support  = shrinkage(both)^(2/3) * squashed_lift^(1/3)   # sample-weighted
+statistical_support = shrinkage(both)^(1/3) * squashed_lift^(2/3)   # effect-weighted
+```
+
+Geometric rather than arithmetic, and that is load-bearing: **a zero on either factor is a
+zero overall.** A pattern seen three thousand times at independence scores nothing, and a
+spectacular ratio seen zero times scores nothing. An arithmetic mean would let a large
+sample of no association carry a component to two thirds of its range, which is how a count
+starts standing in for a finding.
+
+The exponents are a statement about which of two factors each component is *mostly about*,
+not a fitted weighting — nothing here is calibrated, and a two-decimal exponent would imply
+a precision that does not exist. They are named constants (`SAMPLE_WEIGHTED`,
+`EFFECT_WEIGHTED`) with that rationale attached, engine-level rather than pack-level because
+they describe the shape of the two questions and not the domain.
+
+---
+
+## ADR-0053 — The scoring strategy lives in engine code; the domain knobs live in the rule pack
+
+- **Date:** 2026-09-03
+- **Status:** accepted
+- **Supersedes:** — (extends ADR-0049, same pattern one module later)
+- **Affects modules:** Confidence Scorer (10); rule pack authors
+- **Affects interfaces:** `rule_engine.dsl.ConfidenceScoringSpec`, `ConfidenceBandSpec` (both
+  new); `rule_pack_schema_version` 1.1.0 → 1.2.0; `RulePackSpec.confidence_scoring`
+- **Affects risks:** R-16 (a pack that validates cleanly can still be wrong)
+
+### Context
+CONVENTIONS.md §6a says a threshold written into engine code does not move when the domain is
+swapped. ADR-0049 applied that to module 9's generator parameters. Module 10 has more numbers
+than module 9 did, and — unlike module 9's — they are not all the same kind of number.
+
+Two of them are load-bearing in a way §6a does not anticipate. `ConfidenceVector.aggregation`
+records the function that produced a scalar **so that any consumer can recompute it and
+disagree**. If a pack could supply the addend weights or the gate anchors, then
+`gated_weighted_mean_v1` would compute two different things in two packs, the recorded name
+would no longer determine the number, and the recompute-and-disagree property ADR-0009 rests
+on would quietly stop holding.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Everything in the rule pack | Rejected. Maximally domain-independent and it breaks ADR-0009: one strategy name would mean two arithmetics |
+| B | Everything in engine code | Rejected. Band thresholds, band wording, what counts as an impressive lift, and what counts as a small sample are all obviously domain judgements, and a hospital pack wants different ones |
+| C | Split by **kind of number**: the strategy in engine code under a versioned name; everything describing the domain in the pack | **Chosen** |
+
+### Decision
+**The rule between the two homes, stated so it can be applied to the next number:** a number
+that must be *identical across domains for a score to mean the same thing* lives in
+`core.aggregation` under the versioned strategy name. A number that would *legitimately
+differ between DataCo and the hospital pack* lives in the pack.
+
+By that rule: the six addend weights and the two ceiling anchor tables are engine code, and
+`lift_reference`, `small_sample_prior_count`, `evidence_count_saturation_k`,
+`temporal_reference_seconds`, `undetermined_temporal_support`, `minimum_scored_components`,
+`promotion_band` and `confidence_bands` are pack declarations.
+
+**Bands, thresholds AND wording, live in the pack.** A band boundary written into engine code
+is a policy no reviewer of this repository can find. Written into UI code it is worse: no test
+can pin it, and two screens showing one edge can silently disagree about what it means. The
+plain-language sentence is authored per domain for the reason `rationale` is — a supply-chain
+analyst and a clinician do not want the same sentence about the same scalar, and the engine
+has no business writing either.
+
+**Absent means NOT SCORABLE, never a default.** ADR-0049's rule carried forward exactly. A
+pack declaring no `lift_reference` gets `historical_support` and `statistical_support` marked
+missing, with the requirement named — not a default someone discovers six months later. A
+pack declaring no bands gets no labels, and the report says so.
+
+### Two things this immediately caught
+**A floor that could not fire.** DataCo declared `minimum_scored_components: 3`. Three of the
+eight components — `evidence_count`, `evidence_diversity`, `contradiction_freedom` — are
+properties of the claim's own evidence bundle and are therefore *always* measurable, so no
+edge can ever fall below three. The confidence report said so in as many words, and the value
+was corrected to 5 against the observed distribution (4: 1,957 · 5: 930 · 6: 5,238 ·
+7: 1,367). An `INSUFFICIENT_EVIDENCE` count of zero under an unreachable floor says nothing
+about the data; the report now states when the floor cannot fire.
+
+**The hospital pack's numbers are genuinely different** — `lift_reference` 4.0 against
+DataCo's 3.0, `temporal_reference_seconds` 7200 against 86400, floor 6 against 5 — which is
+the LAW-DOMAIN check this split exists to make possible.
+
+### Consequences
+**Positive.** Every scoring number is either in a versioned strategy or in a pack, both with
+a stated rationale, and neither in UI code. R-16 gains a concrete instance and a mechanism
+that surfaced it.
+
+**Negative.** `rule_pack_hash` moved `rul:83fa4858d3cc0a4a` → `rul:01eb1123f2d33de4` and
+**`run_id` moved with it**, which is ADR-0013 working as designed — declaring how to score is
+an input to the Run, not a free edit — and it re-dates the committed candidate-graph report
+under a new `run_id`. Precedented by ADR-0049, which did the same thing on the previous edit.
+
+**A split invites the wrong answer on the next number.** The rule above is the mitigation,
+and it is stated in `ConfidenceScoringSpec`'s own docstring so the next author reads it where
+they are working rather than here.
+
+---
+
+## ADR-0054 — The Causal Graph Builder is a new L6 package, not a §36 module; promotion moves into it
+
+- **Date:** 2026-09-04
+- **Status:** accepted
+- **Supersedes:** — (amends ADR-0053's placement of `promotion_band`; does not reverse it)
+- **Affects modules:** Confidence Scorer (10); Root Cause Analyzer (11); Propagation
+  Analyzer (12); the new Causal Graph Builder
+- **Affects interfaces:** `PromotedGraph`, `PromotedEdge`, `DemotionRecord`,
+  `JointCauseGroup`, `FeedbackLoop`, `GraphQualityReport` (all new);
+  `confidence_scorer.score._promotion_class` (behaviour change);
+  `ConfidenceReport.promoted_count` (meaning change)
+- **Affects risks:** R-14 (day-granularity dominates the graph), R-19 (a pack edit moves
+  `run_id`)
+
+### Context
+prd.md §25 describes the causal graph as the engine's internal reasoning structure, §26
+gives the five edge categories, and §31 requires reinforcing-cycle detection. **§36 names no
+module that owns any of it.** Module 9 proposes candidates, module 10 scores them, and
+modules 11 and 12 (Root Cause, Propagation) both consume a graph they assume already exists.
+The assembly step between 10 and 11 — deciding which scored claims become the system's
+stated view, typing them, weighting them, and looking for loops — has no owner in the
+authoritative build unit (ADR-0006).
+
+This is a gap in the PRD, not a gap in the build order, and it is recorded as OQ-025 rather
+than closed by fiat.
+
+Second, promotion. `_promotion_class` in module 10 assigns `INFERRED` from the pack's
+`confidence_scoring.promotion_band` (ADR-0053). A module whose declared job is "an explicit,
+inspectable selection policy" would then be the *second* place deciding the same thing,
+which is the defect ADR-0053 was written to prevent, one module later.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Renumber it as §36 module 11, pushing Root Cause and Propagation to 12/13 | Rejected. Rewrites the §36↔§44 mapping ratified by ADR-0006 and every module table and prompt that cites a number. The numbers are addresses; moving them to make room is expensive and buys nothing the ADR below does not |
+| B | Extend module 10 with assembly, typing, weights and loop detection | Rejected. `confidence_scorer` would then mean two things, and its single-responsibility README would become false. Scoring a claim and deciding to stand behind it are different acts |
+| C | A new L6 package that is **not** one of the 16, landed as the ontology layer and rule engine were | **Chosen** |
+| D | Leave promotion in module 10 and layer a second, stricter policy on top | Rejected on the same grounds as B's converse: two homes for one decision, and the newer one silently overriding the older |
+
+### Decision
+**The Causal Graph Builder is `causalog.causal_engine.causal_graph_builder`, a package at
+L6 that is not one of the sixteen §36 modules.** It is listed in `CONTEXT.md` §3 the way the
+rule engine is: below the module table, named as the owner of prd.md §25/§26/§31, with
+OQ-025 recording that §36 has no such module and proposing the default that §36 is amended
+rather than renumbered. Modules 11 and 12 keep their numbers and consume its output.
+
+**Promotion to `INFERRED` is this package's decision and no other's.** Module 10's
+`_promotion_class` always returns the weakest class its evidence supports (`STATISTICAL` if
+any evidence item is statistical, else `ASSUMED`) and can no longer return `INFERRED`. The
+Causal Graph Builder promotes by `core.immutability.revise`, which re-runs the frozen
+`CausalEdge` validator and therefore re-checks `INFERRED ⇒ CERTAIN ∧ ¬temporally_unverifiable`
+at promotion time — belt and braces beside the explicit `core.temporal.verdict` re-check
+this package performs against the two `Event` intervals first, which is the check a stored
+edge cannot perform on itself (DEF-0002).
+
+A reader detects a violation of this decision by grepping for `ProvenanceClass.INFERRED` in
+`causal_engine/`: it appears in `causal_graph_builder/policy.py` and nowhere else. That is
+asserted by `tests/law/test_law_time_gates_every_promotion.py`.
+
+### Consequences
+**Positive.** One home for the selection policy, and it is the module whose README says it
+owns it. Module 10's report gets simpler and more honest: it reports scoring, not standing.
+The frozen `CausalEdge` validator becomes a *second* independent LAW-TIME check on the
+promotion path rather than the only one.
+
+**Negative.** `ConfidenceReport.promoted_count` is structurally zero from this commit
+forward. The field keeps its name — renaming it would break the committed artifact's
+comparability — and module 10's report now states in as many words that promotion is not its
+decision and names where it moved. Anyone reading an older `confidence.json` beside a newer
+one must know this; the report schema version does not change because the *shape* did not.
+
+**A package that is not a module is a precedent being used for the third time** (ontology
+layer, rule engine, now this). If a fourth arrives, §36 has stopped describing the system
+and the honest fix is to amend §36, which is what OQ-025 proposes.
+
+---
+
+## ADR-0055 — `graph_construction` at `rule_pack_schema_version` 1.3.0; `promotion_band` deprecated
+
+- **Date:** 2026-09-04
+- **Status:** accepted
+- **Supersedes:** — (extends ADR-0049 and ADR-0053, same pattern one module later)
+- **Affects modules:** Causal Graph Builder; Confidence Scorer (10); rule pack authors
+- **Affects interfaces:** `rule_engine.dsl.GraphConstructionSpec`, `PromotionThresholdSpec`,
+  `MagnitudeAttributionSpec`, `CompetingEffectPolicy`, `WeightNormalization` (all new);
+  `RulePackSpec.graph_construction`; `rule_pack_schema_version` 1.2.0 → 1.3.0;
+  `ConfidenceScoringSpec.promotion_band` → deprecated
+- **Affects risks:** R-16, R-19
+
+### Context
+The Causal Graph Builder's task statement is explicit: *selection thresholds are
+configuration, never literals in code.* It needs more knobs than either prior module — a
+threshold per edge kind, a policy for competing candidates over one effect, a bound on
+circuit enumeration, and a mapping from an effect's event type to the ontology measurement
+whose magnitude is being attributed.
+
+ADR-0053 stated the rule for deciding where a number lives: *a number that must be identical
+across domains for a finding to mean the same thing lives in engine code under a versioned
+name; a number that would legitimately differ between DataCo and the hospital pack lives in
+the pack.* This ADR applies that rule rather than restating it, and it applies it to one case
+where the answer is **engine code**, which is worth recording because every prior application
+came out the other way.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | One global promotion threshold, as module 10 had | Rejected. A `DIRECT` claim and an `AMPLIFYING` claim are not the same kind of assertion and a domain may reasonably demand more of one. A single number forces one answer and hides that a choice was made |
+| B | Per-kind thresholds in the pack; cycle classification in the pack too | Rejected on the second half. See the Decision |
+| C | Per-kind thresholds in the pack; cycle classification in engine code | **Chosen** |
+
+### Decision
+**A new `graph_construction` namespace on `RulePackSpec`, defaulted, additive, at
+`rule_pack_schema_version` 1.3.0.** A 1.2.0 pack still loads and simply constructs no graph
+and says so. Every field is optional and absent by default, and **absent means the policy
+CANNOT RUN and is reported `NOT_RUNNABLE`, never defaulted** — ADR-0049's rule carried
+forward verbatim, for the third time.
+
+Declared in the pack: `promotion_thresholds` (one entry per `CausalEdgeKind`, each naming a
+declared confidence band and carrying a required `rationale`), `competing_effect_policy` and
+`competing_retain_count`, `diversity_credit_ceiling`, `magnitude_attributions`,
+`weight_normalization`, `circuit_enumeration_cap`, `loop_minimum_participants`.
+
+**Cycle classification is engine code, and that is this ADR's one novel application of
+ADR-0053's rule.** Whether a circuit whose links are `UNDETERMINED` is a discovered feedback
+loop or a data artifact is not a domain judgement. If a pack could decide it, "the engine
+detected a reinforcing loop" would mean two different things in two packs, and the sentence
+would stop being a finding. A cycle among events with unverifiable ordering is a data
+artifact in every domain, so `cycles.py` decides it and no pack may override it.
+
+**`ConfidenceScoringSpec.promotion_band` is deprecated**, not removed: still parsed, still
+validated against the declared bands, no longer read by module 10, with the loader emitting
+a `WARNING` diagnostic naming its replacement. Removing it would silently change the meaning
+of an unedited pack; deprecating it tells the author.
+
+### Consequences
+**Positive.** Every threshold in the new package is a pack declaration with an authored
+rationale beside it. The two packs declare deliberately different values — DataCo requires
+`STRONG` for `DIRECT` and `CONDITIONAL` and declares no threshold at all for `AMPLIFYING`
+and `INHIBITING` (it has no rule that produces one, so a threshold would be a policy for a
+kind that cannot occur); the hospital pack differs on every number. That divergence is the
+LAW-DOMAIN check the split exists to make possible.
+
+**Negative.** `rule_pack_version` moves 1.2.0 → 1.3.0, `rule_pack_hash` moves with it, and
+**`run_id` moves with that** — R-19 realised for the third time, exactly as ADR-0035
+predicted, and it re-dates every committed report under a new `run_id`. This is ADR-0013
+working as designed: declaring which claims the engine will stand behind is an input to the
+Run, not a free edit.
+
+**A deprecated field that still validates is a field someone will keep authoring.** The
+diagnostic is the mitigation and it is deliberately `WARNING` rather than `ERROR`: erroring
+would refuse every pack in the repository on the commit that introduced the replacement.
+
+---
+
+## ADR-0056 — The measurement evaluator lifts into `core`; `core` gains magnitude views
+
+- **Date:** 2026-09-04
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** State Engine (6); Causal Graph Builder; Entity/Event extraction
+  adapters
+- **Affects interfaces:** `core.measurement.evaluate_measurement` (new);
+  `core.ontology_view.MeasurementExpressionOperator`, `MeasurementExpressionView`,
+  `MeasurementKindView`, `MagnitudeMeasurementView` (all new, additive);
+  `extraction.ontology_adapters.magnitude_measurements_of` (new);
+  `graph_engine.state_engine.measurement.evaluate_duration_seconds` (reimplemented,
+  behaviour unchanged); `docs/contracts.md` 1.6.0 → 1.7.0
+- **Affects risks:** —
+
+### Context
+Propagation weight is "how much of the effect's magnitude is attributable to this cause",
+and a magnitude in this system is whatever the ontology's `measurement_definitions` declare
+it to be (ADR-0026). Two things stood in the way.
+
+`core.ontology_view` exposes only `DurationMeasurementView`, covering the `DURATION` and
+`DELAY` kinds, and `DurationExpressionOperator` omits `PRODUCT` and `RATIO`. The kinds a
+propagation weight actually needs — `IMPACT`, `COST`, `QUANTITY` — are not adapted at all.
+
+And `graph_engine/state_engine/measurement.py` already walks the declared operator tree.
+Its own docstring anticipates this case: *"a future module needing them extends this
+evaluator rather than duplicating it."* Duplicating it inside `causal_engine` would also put
+arithmetic over domain attributes inside a package `scripts/check_metrics_are_declared.py`
+polices, which is the lint firing correctly on a real smell.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | A second evaluator in `causal_engine` | Rejected. Two implementations of one declared formula, and the metric lint is right to object to the second one |
+| B | `causal_engine` (L6) imports `graph_engine.state_engine` (L4) | Rejected. Legal under the rank rule and wrong: it couples the inference layer to one graph module's private helper, and the helper is `DURATION`-scoped anyway |
+| C | Lift the generic tree walk into `core.measurement`; State Engine's function becomes a thin restriction of it | **Chosen** |
+
+### Decision
+**`core/measurement.py` holds `evaluate_measurement(expression, events_by_type, supported)`,
+the one walk of a declared operator tree in this repository.** It is generic over the node
+shape by structural protocol rather than by a concrete view type, so it evaluates
+`DurationExpressionView` and `MeasurementExpressionView` without a conversion step and
+without either view learning about the other. `supported` is a frozenset of operator name
+strings, so State Engine keeps its exact restriction and its exact error message and its
+behaviour does not change.
+
+`core/` is the right home and is deliberately outside the metric lint's scope: it is the one
+place arithmetic over a *declared tree* belongs, and the lint's own docstring already says so
+about `core/aggregation.py`. `core.measurement` imports `core.ontology_view`,
+`core.types.event` and `core.errors` and nothing else, so F1 and F8 both hold.
+
+`core.ontology_view` gains `MeasurementExpressionOperator` (the full nine-member closed set),
+`MeasurementExpressionView`, `MeasurementKindView` (the full seven-member set) and
+`MagnitudeMeasurementView`, all additive. `extraction.ontology_adapters` gains
+`magnitude_measurements_of`, which — unlike `duration_measurements_of` — excludes nothing by
+kind, because a magnitude attribution may legitimately reference any of them.
+
+### Consequences
+**Positive.** One evaluator, one place to fix a bug in it, and the arithmetic sits where the
+lint agrees it belongs. `DurationExpressionView` is untouched, so no existing consumer moves.
+
+**Negative.** `core` grows a module, and `core` is frozen (ADR-0025). This is additive in
+exactly the sense ADR-0028 and ADR-0035 were additive — nothing existing changed shape, no
+address recipe moved — and it carries the same obligation: `docs/contracts.md` goes to
+1.7.0 and the new names are in the interface registry from this commit.
+
+**A protocol-typed evaluator is weaker than a concrete-typed one.** It cannot check at type
+level that the two view enums stay in step, and if `MeasurementExpressionOperator` gained a
+member `DurationExpressionOperator` lacks, the walk would accept it from one caller and not
+the other. That is checked by a test rather than by the type system, and the test names this
+paragraph.
+
+---
+
+## ADR-0057 — A precedence the source COMPUTED is a distinct temporal finding, and it is measured
+
+- **Date:** 2026-09-05
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** Data Adapter (1); Confidence Scorer (10)
+- **Affects interfaces:** `core.precedence.DerivedPrecedence`,
+  `core.precedence.DerivedPrecedenceIndex`, `core.precedence.temporal_binding_source`
+  (all new); `ingestion.data_adapter.derived_precedence_index` (new);
+  `confidence_scorer.ScoringContext.derived_precedence` (new, defaulted);
+  `confidence_scorer.DerivedPrecedenceAudit` (new);
+  `rule_engine.ConfidenceScoringSpec.derived_precedence_temporal_support` (new);
+  `RULE_PACK_SCHEMA_VERSION` 1.3.0 → 1.4.0; `CONFIDENCE_REPORT_SCHEMA_VERSION` 1.0.0 → 1.1.0;
+  `docs/contracts.md` 1.7.0 → 1.8.0
+- **Affects risks:** R-14 (narrowed — the granularity finding now has a named sibling);
+  R-19 (fires again, expected)
+
+### Context
+`core.temporal.verdict` is a test over interval BOUNDS, and it is correct. It cannot see
+where the bounds came from. When a source computes its later instant from its earlier one —
+column B equals column A plus a recorded day count — the two intervals genuinely do not
+overlap, so the verdict is genuinely `CERTAIN`, and it establishes nothing: they could not
+have overlapped whatever the underlying events did.
+
+The DataCo mapping already SUSPECTED this and module 1 already MEASURES it. Over the shipped
+dataset, `SHIP_INSTANT_IS_DERIVED` holds in 170,782 of 180,519 evaluable rows (94.61%), and
+the residuals are not noise: they are exactly ±43,200 seconds, a twelve-hour AM/PM defect in
+the source. The derivation is effectively universal.
+
+An audit walked the temporal layer against the raw file and found the consequence. Fourteen
+of the pack's nineteen event types are `policy: UNKNOWN`; of the five that are placed, three
+are `INFERRED` and therefore barred from `CERTAIN` by ADR-0021. Exactly one pair in the whole
+pack can reach `CERTAIN` — and its precedence is the arithmetic above. LAW-TIME, the most
+conservative test in the system, had no discriminating power on the only edge it admitted,
+and `temporal_support` scored that pair exactly as it would score an observed one.
+
+The measurement existed. It stopped at `DataQualityReport.derivations`, which is written to
+`docs/reports/` and read by nothing.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Reuse `undetermined_temporal_support` for derived pairs | Rejected. An `UNDETERMINED` pair was placed twice and could not be separated; a derived pair was placed once and restated. Different findings, and this codebase does not sum different findings |
+| B | Block promotion outright, as `temporally_unverifiable` does | Rejected. Faithful to the finding and disproportionate: it empties the promotable graph on the strength of a rate a pack may reasonably weigh differently |
+| C | A declared cap on the component, NOT SCORABLE when undeclared | **Chosen** |
+
+### Decision
+**`confidence_scoring.derived_precedence_temporal_support` caps `temporal_support` for any
+pair whose precedence a supplied measurement confirmed as arithmetic.** The value is
+`min(tightness, declared)` — a ceiling, not a substitution, so a wide admissible separation
+is never *raised* by having been manufactured. Provenance on that branch is `ASSUMED`, not
+`INFERRED`: the bounds established nothing, and the number now standing there came from a
+declaration.
+
+**Undeclared, the component is NOT SCORABLE for that pair**, with a branch-specific
+requirement naming the knob and the check that fired. Scoring the tightness instead would
+report the source's own subtraction back to the reader as evidence.
+
+**The measurement's absence is a fact about the RUN, not about any pair.** `ScoringContext`
+carries `DerivedPrecedenceIndex | None`, matching `rule_evaluation`'s existing idiom: `None`
+means nobody looked, an empty index means the audit ran and confirmed nothing. With `None`
+the score stands and every affected edge carries a NOT AUDITED caveat, with the gap stated
+once at report level. Refusing every `CERTAIN` pair for want of an audit would assert that
+all precedence is suspect — an overclaim in the opposite direction.
+
+**The carrier lives at L0 and compares locators by STRING EQUALITY only.** `causal_engine`
+(rank 6) never imports `ingestion` (rank 2). `TimeInterval.source` is an opaque provenance
+locator, and `precedence_for` never splits it, pattern-matches it, or recovers a column from
+it — engine code that interpreted that string would be reading the source description, which
+is domain arriving as a value (`docs/architecture.md` §1.5) and is the one form of the leak
+the vocabulary lint cannot see.
+
+**The pair is DIRECTED.** `equals_column` supplies the cause side and `column` the effect
+side, so the reverse precedence is untouched. The index also refuses an entry naming one
+locator on both sides, which is what makes a claim between two events read from ONE column
+structurally incapable of matching.
+
+### Consequences
+**Positive.** The one edge DataCo can promote is now scored for what it is. The audit is a
+measurement end to end — module 1 tests the mapping's suspicion over every row rather than
+believing it, and module 10 reads the result rather than re-deriving it. On the reference
+slice the feature fires: one check confirmed, eight claims capped.
+
+**Negative — `rule_pack_version` moves, and `run_id` with it.** `rule_pack_version`
+participates in `RunKey` (ADR-0013), so every content-addressed inferred artifact re-dates.
+`rule-coverage`, `candidate-graph`, `confidence`, `causal-graph` and every id in
+`causal-graph-edges.json` were regenerated in this commit. R-19 predicted exactly this and
+this is its fourth firing. `dataset_version` is unaffected, so no re-import was needed.
+
+**Negative — a pack that forgets the knob collapses a class of edges.** `missing=True`
+lowers `measured`, which can push an edge below `minimum_scored_components` into
+`INSUFFICIENT_EVIDENCE`, and value 0.0 caps its scalar at 0.25. That is the NOT RUNNABLE
+ethic working, and it is pinned by a test so it is deliberate rather than discovered.
+
+**The parameter is a COMPONENT value and reads as a scalar one.** It reaches the scalar
+through `TEMPORAL_CEILING_ANCHORS`, which is not the identity: DataCo's 0.10 caps the scalar
+near 0.33, not at 0.10. `undetermined_temporal_support` has always had this property; both
+packs now carry a comment stating the resulting ceiling, which is the only mitigation
+available short of changing the anchors.
+
+**`core/` grows a module, and `core` is frozen (ADR-0025).** Additive in the sense ADR-0028,
+ADR-0035 and ADR-0056 were additive — nothing existing changed shape, no address recipe
+moved — carrying the same obligation: `docs/contracts.md` to 1.8.0 and the new names in the
+interface registry from this commit. Note also that `core/`'s actual module list already
+exceeds `CONVENTIONS.md` §6's literal prose; that divergence predates this ADR and is
+recorded here rather than resolved by it.
+
+---
+
+## ADR-0058 — A rejection keeps the effect it was refused for, under a declared bound
+
+- **Date:** 2026-09-05
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** Candidate Cause Generator (9); Causal Graph Builder
+- **Affects interfaces:** `GateOutcome.cause_event_id`, `GateOutcome.effect_event_id` (new,
+  required); `candidate_cause_generator.RejectedProposal`, `SAMPLED_REJECTIONS` (new);
+  `CandidateGraph.rejections`, `.rejection_total`, `.rejections_per_effect`,
+  `.rejections_for_effect` (new); `apply_per_effect_cap` returns a third member
+  (**signature change to public API**); `CandidateGraphReport.rejections_per_effect`,
+  `.rejection_total` (new); `PromotedGraph.demotions_for_effect`, `.demotions_per_effect`
+  (new); `CANDIDATE_GRAPH_SCHEMA_VERSION` 1.0.0 → 1.1.0
+- **Affects risks:** —
+
+### Context
+"What candidates were rejected for this effect, and why?" had no answer at instance level.
+`GateOutcome` set `candidate` to None on a rejection, and the candidate was where the two
+event ids lived, so refusing a proposal destroyed the only record of which effect it was
+refused for. `RejectionTally` kept five scalar counters per generator.
+`apply_per_effect_cap` discarded the dropped edges entirely, keeping only counts. The
+question resolved at generator grain, or — through the Causal Graph Builder's
+`rejected_effect_types` — at event-type grain, and no finer.
+
+This matters most exactly where the graph is thinnest. An effect with no promoted
+explanation is the case a reader most wants to interrogate, and "nothing was kept here" and
+"eleven claims were considered and every one was refused, nine of them for precedence"
+are very different statements about a dataset.
+
+### Options considered
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Leave it; the counts suffice | Rejected. A count cannot be interrogated, and the thin-graph case is where interrogation matters |
+| B | Retain every rejection in full | Rejected on measurement. The 150-row reference slice rejects 143,145 claims against 17,864 retained — eight times the graph, 133,835 of them cap truncations. Unbounded retention contradicts this module's own discipline and would not survive `--rows 0` |
+| C | Complete counts, bounded records | **Chosen** |
+
+### Decision
+**`GateOutcome` carries `cause_event_id` and `effect_event_id`, required.** All four
+construction sites hold the full `Proposal`; required rather than optional means no site can
+forget. When a candidate is present the two ids must equal its own — one shape for every
+outcome, and the duplication checked rather than trusted.
+
+**`apply_per_effect_cap` returns the dropped `CandidateEdge` objects**, not a projection of
+them. The caller knows what it needs to keep; returning counts forced the lossy decision
+into the function where the information no longer exists.
+
+**`CandidateGraph` splits complete counts from a bounded sample**, which is the idiom
+`confounding_flags` / `confounding_flag_total` already establishes next door.
+`rejections_per_effect` and `rejection_total` are computed over the COMPLETE set before
+sampling and stored; `rejections` holds at most `SAMPLED_REJECTIONS` records. A per-effect
+count derived from the sample would be a partial number in the shape of a total, which is
+worse than no number, and `rejections_for_effect` documents that it reads from the sample.
+
+**Coverage is instance-level for four of the five reasons, and the fifth is refused
+structurally.** `GENERATOR_NOT_RUNNABLE` is recorded when a generator never ran, so there
+was no proposal and no effect to name. `CandidateGraph` raises on a `RejectedProposal`
+carrying it. A documented limitation nothing enforces is a limitation waiting to be violated.
+
+**No uniqueness check on rejections.** Only IDENTICAL payloads are merged upstream, so one
+generator may legitimately propose a pair twice under different payloads and have both
+refused for one reason. `(cause, effect, generator, reason)` is not unique, and a validator
+asserting it would raise on real data.
+
+**Module 11 needed only query helpers.** `DemotionRecord` already carries both event ids and
+`PromotedGraph.demotions` is already retained and serialized in full, so the instance data
+was never lost there — only the report's by-type aggregation summarized it away.
+`demotions_for_effect` and `demotions_per_effect` expose what was already held, with no
+sampling, and the report's aggregation is unchanged.
+
+### Consequences
+**Positive.** The question is answerable, and the bound is stated rather than discovered.
+Cap truncations — by far the commonest rejection — are instance-level for the first time.
+
+**Negative — `rejections_for_effect` can return an incomplete answer** on a large run, and a
+caller who reads an empty result as "nothing was refused here" will be wrong.
+`rejections_per_effect` is the authority and the docstring says so, but this is a real edge
+and raising `SAMPLED_REJECTIONS` would trade it for memory rather than remove it.
+
+**Negative — `apply_per_effect_cap` is exported public API and its signature changed.** A
+two-tuple unpack now raises. There is one production caller and one test caller, both
+updated here, but the break is real and is why it is recorded in an ADR rather than left to
+a changelog line.
+
+---
+
+## ADR-0059 — A traversal declares which graph it walked, and a disowned view is a first-class standing
+
+- **Date:** 2026-09-06
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** Root Cause Analyzer, Propagation Analyzer, the pattern miner
+- **Affects interfaces:** `PropagationReport`, `RootCauseRanking`, `StructuralPatternReport`, `GraphView`, `GraphStanding`
+
+### Context
+
+Modules 11 and 12 traverse the promoted graph. On the committed bounded run **that graph is
+empty**: 0 of 9,492 claims promoted, with 65.5% `TEMPORALLY_UNVERIFIABLE`, 13.8%
+`TEMPORAL_NOT_CERTAIN` and only 8 claims ever reaching a band comparison. The binding
+constraint is time, not the threshold (R-14 third instance, R-22). Modules 7 and 8 are
+unbuilt and the source is day-granular; more rows cannot change it.
+
+So a strict module 11 answers every question about every outcome with silence. That silence
+is TRUE and it is the headline finding. It also exercises no ranking, no attribution, no
+composition and no counterfactual, which leaves both modules unverifiable in practice and
+leaves the reason the graph is empty looking like an absence of output rather than a property
+of the inputs.
+
+### Options considered
+
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Analyze the promoted graph only | Rejected as the SOLE behaviour. It is kept as the stated behaviour, but on its own it publishes five empty answers and no evidence that the machinery is right. |
+| B | Lower the pack's promotion thresholds until edges promote | Rejected, and the graph quality report already names it as the wrong move in as many words: "an empty graph published with its ledger is a more useful artifact than a populated graph produced by lowering a threshold until something appeared." It would also change nothing — only 8 of 9,492 claims are threshold-bound. |
+| C | Add a `--force` flag that treats scored edges as promoted | Rejected. It launders provenance through a command-line argument, and the resulting artifact is indistinguishable from a real one once written to disk. |
+| D | **Make the standing an explicit, required, type-enforced property of every artifact, and publish both runs separately** | **Chosen.** |
+
+### Decision
+
+`GraphStanding` has two members and every artifact modules 11 and 12 and the miner produce
+carries one as a **required field with no default**.
+
+- `STATED` walks `PromotedGraph`. Findings are the engine's.
+- `UNPROMOTED_DIAGNOSTIC` walks module 10's `CausalGraph` before promotion. Findings are
+  **disowned**.
+
+Four mechanisms keep the second from contaminating the first, and all four are structural
+rather than procedural:
+
+1. `standing` is required. An artifact cannot exist without someone stating which graph it
+   came from.
+2. `diagnostic_view` is the **only** construction site of `UNPROMOTED_DIAGNOSTIC` in the
+   engine, asserted over the AST by `tests/law/test_ranking_never_collapses.py`.
+3. Every artifact's validator raises `LawViolationError` if a diagnostic standing carries
+   `INFERRED`. A diagnostic finding cannot be laundered into an assertion by editing a
+   provenance field.
+4. `DIAGNOSTIC_NOT_STATED_NOTICE` is a **property, not a field**, so a stored artifact cannot
+   carry a reworded one and it enters no content address.
+
+`diagnostic_view` additionally refuses a graph containing an already-promoted edge, so the
+mistake is named at the boundary rather than surfacing three layers later.
+
+The two runs write to separate files (`root-cause-cases.md` and
+`root-cause-cases-diagnostic.md`). **Nothing merges them.**
+
+### Consequences
+
+**Positive.** The empty stated view is published as the finding it is, with its ledger, and
+beside it is a visible, checkable demonstration of what the machinery does — so "the graph is
+empty" is legible as a property of the source rather than as a broken module. Modules 13 and
+14, when built, have a named thing to refuse.
+
+**Negative, and it is the serious one.** A second published artifact that looks like an
+analysis and is not one is a new way to be misread. Somebody will quote a diagnostic number
+without its notice. The notice is fixed text on a property and is printed above every table,
+and the file name carries `-diagnostic`, and neither of those stops a screenshot. This is
+accepted rather than solved.
+
+**Obligations created:** modules 13 and 14 must refuse a diagnostic input when they are
+built; the Visualization API must render the standing at least as prominently as the numbers;
+no report may place a stated and a diagnostic figure in one table.
+
+### Reversibility cost
+
+**Low.** Deleting `diagnostic_view` and the enum's second member removes the whole facility;
+`GraphView` and every artifact keep working over the stated graph alone.
+
+---
+
+## ADR-0060 — A chain is only as strong as its weakest link, and the composition is named
+
+- **Date:** 2026-09-06
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** Propagation Analyzer, Root Cause Analyzer
+- **Affects interfaces:** `causalog.core.composition`, `PathConfidence`
+
+### Context
+
+Ranking a cause requires belief about the chain joining it to the outcome. `core.aggregation`
+answers how one claim's components roll up; nothing answered how several claims' scalars
+compose along a path, and the two questions have the same shape and must not be confused.
+
+### Options considered
+
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Product of the per-link scalars | Rejected as the DEFAULT. It treats the values as independent probabilities and they are neither: they are uncalibrated (OQ-024, and nothing in this repository can calibrate them) and consecutive links over one process instance share evidence. Under a product a six-link chain of 0.9s composes to 0.53 and a two-link chain of 0.7s to 0.49, so the longer chain outranks one no part of which is weaker — the number reports LENGTH while appearing to report belief. |
+| B | Mean of the per-link scalars | Rejected outright: not monotone along a path. Appending a strong link RAISES it, so the engine would claim more confidence about a longer inferential leap. |
+| C | **Minimum, registered by name, with the product registered beside it** | **Chosen.** |
+
+### Decision
+
+`causalog.core.composition` is a registry keyed by name, exactly as `core.aggregation` is, and
+**the name travels with the data** on every `PathConfidence`. `weakest_link_v1` (the minimum)
+is the default; `independent_product_v1` is registered beside it.
+
+Four reasons for the minimum, in the module's own docstring so the next author does not
+re-derive them badly: it is the doctrine `core.provenance.combine` and `aggregation
+.minimum_v1` already hold, so three mechanisms share one rule; the product is arithmetic with
+semantics these numbers do not have; the minimum is monotonically non-increasing and
+idempotent along a path, which is what "weakest link" literally asserts; and its cost is paid
+for explicitly rather than hidden.
+
+**Its cost, stated rather than discovered.** The minimum ties heavily — 310 scored links on
+the measured slice sit at exactly 0.400000, so many distinct chains compose identically. Two
+consequences follow, both deliberate: the product is carried in its own column so a reader
+wanting length sensitivity has it, and **path length is a separate field beside the composed
+value, never folded into it** — ADR-0008's never-blend ruling applied one level down.
+
+A **plateau is reported as a plateau**. Where every route or every recommended candidate
+carries one value, the report says the engine cannot separate them and does not break the tie.
+
+### Consequences
+
+**Positive.** Chain confidence is explainable, recomputable from the carried link scalars, and
+consistent with the provenance algebra. A future composer is held to monotonicity by a
+hypothesis test that already exists.
+
+**Negative.** The minimum discards information: two chains differing only in their strong
+links compose identically, and on this dataset that is common rather than rare. The product
+column mitigates and does not remove it. And registering two functions invites a reader to
+pick whichever suits their argument — which is the same objection ADR-0008 accepts for the
+four root-cause views, and is accepted here for the same reason.
+
+### Reversibility cost
+
+**Low.** Adding or changing the default is a one-line registry edit; every existing artifact
+records the name it was composed under and recomputes to the same value.
+
+---
+
+## ADR-0061 — Consequence is attributed to the node set, never to the routes
+
+- **Date:** 2026-09-06
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** Propagation Analyzer, Root Cause Analyzer
+- **Affects interfaces:** `causalog.core.attribution`, `ConsequenceSet`, `PreventedConsequence`
+
+### Context
+
+prd.md §30 requires every downstream consequence to be measured. A graph with parallel routes
+makes that ambiguous: a consequence reachable four ways can be counted once or four times, and
+the wrong choice produces a total larger than any quantity anyone measured, with nothing
+raised and no figure obviously wrong.
+
+The same ambiguity appears in the counterfactual direction. "What does removing this prevent?"
+answered as "everything downstream of it" is wrong on a diamond: a consequence with another
+surviving ancestor does not disappear.
+
+### Decision
+
+**Attribution is over the SET of reachable nodes.** `ConsequenceSet` is keyed by event
+identifier and validates its membership sorted and unique at construction, so the guarantee is
+held by a type rather than by care taken at a call site. `route_count` is reported as
+structure and multiplies nothing.
+
+**Counterfactual-lite is a re-reachability diff, not a subtraction:**
+`prevented(n) = reachable(seed) \ reachable(seed, excluding=n)`. O(V+E) per candidate and
+correct on diamonds by construction. A joint cause group is removed **as a unit** — removing
+its members one at a time and intersecting is a different and wrong computation, since a
+consequence held up by two members survives each single removal and survives neither removal
+of the group.
+
+**How readings combine across the set is a pack declaration**, not an engine default:
+`propagation_analysis.impact_aggregation` names an operator per measurement from a closed
+three-member set (`SUM`, `MINIMUM`, `MAXIMUM`). Whether two figures add is domain policy —
+currency over distinct subjects adds, elapsed time over overlapping periods does not. The
+arithmetic lives in `causalog.core.attribution`, at L0, for the reason `core.measurement`
+lives there: `scripts/check_metrics_are_declared.py` refuses inline arithmetic bound to a
+metric name inside a reasoning package, and it is right to.
+
+The four omitted operators are omitted because they are not n-ary over an unordered set: a set
+has no first element for `DIFFERENCE`, `PRODUCT` or `RATIO` to be relative to, so admitting one
+would make the result depend on iteration sequence.
+
+### Consequences
+
+**Positive.** The diamond case is correct and is asserted against the fixture's own inputs in
+`tests/graph/test_impact_is_not_double_counted.py`. Impact totals cannot silently exceed the
+measured quantity. Joint groups behave as the Causal Graph Builder's own note on the type says
+they should.
+
+**Negative.** Re-reachability is O(V+E) per candidate and the candidate set can be large; the
+pack's `candidate_cap` bounds it and reaching that bound is reported as truncation. A set-level
+total also hides route structure, so a consequence reached by twenty routes and one reached by
+one contribute identically — which is correct for a total and is why `route_count` is on
+every node.
+
+### Reversibility cost
+
+**Medium.** The set-keyed shape is `ConsequenceSet`'s and its consumers'; changing to
+per-route accumulation would change every published total.
+
+---
+
+## ADR-0062 — Actionability metadata reaches L6 as flattened views; the stamp stays authoritative
+
+- **Date:** 2026-09-06
+- **Status:** accepted
+- **Supersedes:** — (extends ADR-0008)
+- **Affects modules:** Root Cause Analyzer
+- **Affects interfaces:** `core/ontology_view.py`, `extraction.ontology_adapters`
+
+### Context
+
+ADR-0008 stamps `Event.is_actionable` at generation time so that module 11, at L6, never reads
+the ontology (forbidden edge F3). A boolean is enough to FILTER on and not enough to RANK on:
+prd.md §29 asks which actionable event to change, and two actionable events differ in what
+changing them costs. The pack declares `cost_class` and `severity_class` per event type with
+integer ranks in shared vocabularies, and nothing transported them past `ontology_runtime`.
+
+### Decision
+
+`ActionabilityView` and `OrdinalClassView` are added to `core/ontology_view.py` additively, and
+`actionability_of`, `cost_classes_of` and `severity_classes_of` to
+`extraction.ontology_adapters` — the ADR-0056 pattern exactly, for the same reason: `Event` is
+frozen and is the most-consumed type in the system, and an adapter-produced view costs no
+change to a frozen contract.
+
+**The stamp on the event remains authoritative.** The views only refine a set the boolean has
+already selected; they never promote an unactionable event into it, and a missing cost rank
+leaves a candidate in the set rather than dropping it — an undeclared cost is an unknown cost,
+not a prohibitive one.
+
+**A disagreement between the stamp and the current pack is REPORTED and not resolved.** A run
+generated under an earlier ontology is exactly where the two diverge, and silently preferring
+either value would move the headline answer with nothing recording that it had.
+
+### Consequences
+
+**Positive.** "Most actionable" is a real ranking rather than a filter. Domain independence
+survives: module 11 still reads only canonical types and flattened views, and still never
+learns that an ontology exists.
+
+**Negative.** **R-15 is not mitigated and is now load-bearing in two places instead of one.**
+A mis-declared `actionable` flag changes the recommendation and nothing can detect it; a
+mis-declared `cost_class` now changes which lever is offered first, and nothing can detect that
+either. The caveat is printed above every ranking as a property no revision can soften, which
+is disclosure and not mitigation.
+
+### Reversibility cost
+
+**Low.** The views are additive and the adapter functions are new; removing them returns module
+11 to ranking on the boolean alone.
+
+---
+
+## ADR-0063 — Modules 11 and 12 and the miner declare their bounds in the pack (schema 1.5.0)
+
+- **Date:** 2026-09-06
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** Root Cause Analyzer, Propagation Analyzer, the pattern miner
+- **Affects interfaces:** `RulePack`, `PropagationAnalysisSpec`, `RootCauseAnalysisSpec`, `PatternMiningSpec`
+
+### Context
+
+ADR-0053 stated the rule for deciding where a number lives and ADR-0055 applied it. This is the
+fourth application: a number that must be identical across domains for a finding to mean the
+same thing lives in engine code under a versioned name; a number that would legitimately differ
+between two packs lives in the pack.
+
+### Decision
+
+Three new namespaces at `rule_pack_schema_version` **1.5.0**, additive and defaulted.
+`propagation_analysis` carries `maximum_depth`, `traversal_node_cap`, `impact_aggregation` and
+`path_confidence_composition`. `root_cause_analysis` carries `ranking_function`,
+`minimum_chain_scalar`, `candidate_cap` and `recurrence_minimum_support`. `pattern_mining`
+carries `motif_minimum_support`, `motif_maximum_length` and `bottleneck_minimum_degree`.
+
+**Every field is optional and an absent one means the policy CANNOT RUN**, is reported as a
+`PolicyGap` with what it would have needed, and is never defaulted — ADR-0049's rule for the
+fourth time, and the reason is unchanged: a default written into the engine is a judgement
+wearing a schema default's clothes.
+
+A pack chooses **which** named composition and ranking function apply; it never supplies one.
+The functions live in `core.composition` and `core.ranking` under versioned names, for the
+reason `core.aggregation` holds the confidence strategies: if a pack could supply the
+arithmetic, "the engine ranked this cause first" would mean two different things in two packs.
+
+**There is deliberately no weighting field between earliness and prevented consequence.** It is
+absent because ADR-0008 rules the number must not exist, not because nobody has added it.
+
+The loader gains `_check_analysis_blocks`, emitting `ERROR` for a combination operator outside
+the closed set and for an unregistered composition or ranking function, `WARNING` for a chain
+floor above every declared band floor, and `NOT_RUNNABLE` for
+`impact_aggregation.measurement_id`, which `VocabularyView` cannot check because it carries no
+measurement ids — the same hole `RUL-N-ATTRIBUTION-MEASUREMENT` already reports, reported rather
+than passed over.
+
+### Consequences
+
+**Positive.** Both modules are tunable per domain with no code change, and every absent
+declaration is visible in the report rather than silently substituted.
+
+**Negative, and expected rather than discovered.** `rule_pack_version` moves 1.4.0 → 1.5.0,
+`rule_pack_hash` moves with it, and **`run_id` moves with that** — R-19 realised for the fourth
+time, exactly as ADR-0035 predicted, re-dating every committed report under a new `run_id`. That
+is ADR-0013 working as designed: declaring what the engine will stand behind is an input to the
+Run, not a free edit. The hospital pack declares nothing in the three new blocks, which is valid
+and exercises the absent-means-CANNOT-RUN path in a second pack.
+
+### Reversibility cost
+
+**Medium.** The namespaces are additive, but removing one is a schema major and moves `run_id`
+again.
+
+---
+
+## ADR-0064 — Structural pattern mining lands as a package, not inside a module
+
+- **Date:** 2026-09-06
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** none — this is the point
+- **Affects interfaces:** `StructuralPatternReport`, `Motif`, `Bottleneck`
+
+### Context
+
+prd.md §10 names Executive Leadership as a user who "needs strategic patterns rather than
+individual incidents". prd.md §36 lists sixteen modules and none of them answers a question
+about the run: modules 11 and 12 both answer questions about one outcome. This is OQ-025's
+shape a second time — PRD-required work that §36 names no owner for.
+
+### Decision
+
+`causal_engine/pattern_miner` lands at L6 as a package that is **deliberately not one of the
+sixteen modules**, following the Causal Graph Builder's precedent (ADR-0054). Module 11's
+contract is "rank causes by consequence prevented" and module 12's is "measure how an effect
+spreads from a seed"; cross-run mining is neither, and widening either would make
+`docs/architecture.md` §2 wrong about what that module does.
+
+**Everything runs over the event-TYPE projection, never over instances** — the altitude
+`causal_graph_builder.cycles` chose, for the reason stated there: a claim about instances is
+unique by construction, so a recurrence counter running at that level could only ever return
+one. The cost is on every row rather than in a footnote: each finding carries the number of
+process instances it spans beside its raw count, because one type firing forty times inside one
+instance is a local pathology and the same count across forty instances is systemic.
+
+**In-degree and out-degree are never summed**, and there is **no combined importance figure** —
+the weighting between "happens often" and "costs a lot when it happens" would be an
+unexplainable constant, which is ADR-0008's objection one level up.
+
+**An empty list is never published alone.** It reads as "there are none" and may instead mean
+nothing was looked for; every empty section carries a sentence saying which, and the report's
+validator refuses one that does not.
+
+### Consequences
+
+**Positive.** A §10 user is served, `docs/architecture.md` §2 stays true about modules 11 and
+12, and the un-owned scope is visible in the repository rather than smuggled into a module's
+remit.
+
+**Negative.** A third un-numbered L6 package widens the gap between prd.md §36's module list and
+what the engine actually contains. That gap is now three packages wide (the rule engine, the
+Causal Graph Builder, this) and is recorded in OQ-025 rather than closed. This version
+enumerates motifs of length two only, and says so in the report rather than letting a reader
+infer that longer shapes were searched for and not found.
+
+### Reversibility cost
+
+**Low.** Nothing depends on it; deleting the package removes a report.
+
+---
+
+## ADR-0065 — A counterfactual is a plausibility simulation; ADR-0011 was reserved and never written
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 13 Counterfactual Simulator
+- **Affects interfaces:** `SimulatedWorld`, `OutputEnvelope` (usage, not shape)
+
+### Context
+
+`docs/architecture.md` §2 states that module 13 **"requires ADR-0011 before this module is
+built"**. `CONTEXT.md` OQ-007 names ADR-0011 as what unblocks it. `PROGRESS.md` §13 names it a
+third time. **ADR-0011 does not exist.** The number was reserved at the 2026-08-23 scaffold
+and never written, and numbering has since reached ADR-0064.
+
+This is the DEF-0001 shape in a new place: a pointer that reads like a decision and is not.
+`scripts/check_governance_consistency.py` did not catch it because all six of its rules fire
+on ADRs that exist — a struck question naming a *missing* ADR is caught, but an *open*
+question naming one is not, and OQ-007 is open. The gap is closed by a seventh rule in the
+same commit as this ADR.
+
+The substance OQ-007 asks about is unchanged since it was opened. prd.md §33 promises
+simulation over a graph whose edges are rule- and statistics-derived; prd.md §16 already
+concedes the project "does not attempt to prove causality with mathematical certainty". A
+simulation over such a graph has no identification argument behind it. It is not nothing —
+it is what this graph asserts, propagated — but it is not a causal effect estimate.
+
+### Options considered
+
+1. **Write it as ADR-0011, out of sequence.** Keeps three pointers correct at the cost of a
+   log whose numbers no longer run with its dates. Rejected: `DECISIONS.md` is read
+   chronologically and a 2026-09-07 decision sitting between two 2026-08-23 ones misleads
+   every future reader about what was known when.
+2. **Write it under the next free number and correct the pointers.** Costs three edits and
+   makes the reservation visible as a thing that happened rather than papering over it.
+3. **Leave the number dangling and build anyway.** Rejected: `docs/architecture.md` states
+   the ADR as a precondition, and building through a stated precondition is precisely the
+   assertion-not-specification error OQ-009 exists to prevent.
+
+### Decision
+
+**Option 2.** This ADR is **ADR-0065**. ADR-0011 was reserved and never written; the three
+pointers in `docs/architecture.md` §2, `CONTEXT.md` OQ-007 and `PROGRESS.md` §13 are corrected
+to name ADR-0065 in this commit, and the reservation is recorded here rather than erased.
+
+**What module 13 produces is a PLAUSIBILITY SIMULATION.** Graph surgery over frozen edges:
+mutations applied to a copy, propagated along links the engine has already stated, with the
+result carrying `ProvenanceClass.SIMULATED` and the no-unobserved-confounder assumption in
+the output envelope. It is a statement about what this graph implies, under a stated
+intervention, about a world that did not happen.
+
+**It is NOT:** a causal effect estimate; a prediction of the future; a measurement; a claim
+that the intervention would have had this effect. `ProvenanceClass.SIMULATED` is the weakest
+member of `WEAKEST_FIRST`, so `combine` makes containment structural — anything touched by a
+simulated input is simulated, and a simulated world cannot launder itself back into
+`INFERRED`.
+
+**The language of every output is backward-facing.** A counterfactual here is a hypothetical
+about the past. `GLOSSARY.md` §2.6 already rules this; module 13 holds it in fixed text that
+no revision can soften, as `DIAGNOSTIC_NOT_STATED_NOTICE` and
+`ATTRIBUTION_NOT_MEASUREMENT_NOTICE` are held.
+
+**The rigour beyond graph surgery EXTENDS the PRD and is recorded as an extension.** The PRD
+uses the words *provenance*, *validity*, *extrapolation* and *sensitivity* exactly zero times.
+Principle 5's assumption enumeration binds **recommendations**; §32's six-field intervention
+record omits assumptions; §51 Workspace 5 asks for no confidence display at all, alone among
+the workspaces that show derived numbers. §56's "Counterfactual consistency" and §57's
+"Counterfactual plausibility" are named and never defined. So the support envelope, the
+`EXTRAPOLATION` verdict, the sensitivity sweep and the enumerated assumption list
+(ADR-0070) are **this project's addition**, made because a counterfactual without them is a
+confident number with nothing behind it — and they are opened as **OQ-029** for a product
+owner to ratify or trim rather than presented as a reading of the document.
+
+### Consequences
+
+**Positive.** OQ-007 closes. A stated precondition on module 13 is met rather than stepped
+over. The reservation gap is visible, and the check that would have caught it exists.
+
+**Negative.** Three documents change to name a different number, and a reader who remembers
+"ADR-0011" will not find it. That is the cost of recording the gap instead of hiding it. The
+extension recorded here is real scope the PRD does not authorise, and OQ-029 may trim it.
+
+### Reversibility cost
+
+**Low for the numbering.** **High for the stance:** every simulated artifact carries the
+plausibility framing in fixed text and in its provenance class, and softening it later would
+mean re-labelling every published artifact.
+
+---
+
+## ADR-0066 — Interventions are a typed language, validated against the ontology before anything is simulated
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 13 Counterfactual Simulator
+- **Affects interfaces:** `InterventionSpec`, `InterventionPayload`, `RejectedIntervention`
+
+### Context
+
+prd.md §33's examples ("what if the dispatch left two hours earlier", "what if the resource
+were available", "what if capacity increased") are three different operations on the graph and
+the document treats them as one. A free-form mutation would let a caller ask for a world the
+domain does not admit — an entity in a state its lifecycle cannot reach, a step inserted where
+the process declares none, a cause moved after its effect.
+
+**Simulating an impossible world produces a confidently wrong answer**, and it produces it
+through exactly the machinery built to make answers trustworthy: the propagation is correct,
+the confidence composes correctly, the report renders correctly, and the premise is
+unreachable. Nothing downstream can detect that.
+
+### Decision
+
+**Five typed interventions, as a discriminated union**, mirroring `CausalEdgePayload`'s shape
+so a deserialized intervention cannot land in the wrong branch:
+
+| Kind | Operation |
+|---|---|
+| `SHIFT_TIMING` | move one event's instant by a signed delta |
+| `REMOVE_EVENT` | delete one event and every link through it |
+| `INSERT_EVENT` | place a declared event type at a stated instant |
+| `CHANGE_ATTRIBUTE` | set one ontology-declared **mutable** attribute (ADR-0067) |
+| `CHANGE_ENTITY_STATE` | set one entity's state at a stated instant |
+
+**Every intervention is validated against the ontology before any simulation runs**, and
+validation is a separate pass rather than a check inside the propagation loop, so that a set
+containing one inadmissible member never partially executes. Four gates:
+
+1. **Lifecycle legality** — a `CHANGE_ENTITY_STATE` naming a transition absent from the
+   entity type's `LifecycleView.transitions` is rejected.
+2. **Process legality** — an `INSERT_EVENT` at a position no `ProcessDefinitionView`
+   `canonical_sequence`, `variants` or `optional_steps` admits is rejected.
+3. **Mutability** — a `CHANGE_ATTRIBUTE` on an attribute the pack does not declare mutable
+   is rejected, and an absent declaration means rejected rather than permitted (ADR-0067).
+4. **Temporal admissibility** — a `SHIFT_TIMING` or `INSERT_EVENT` that would place a cause
+   at or after its effect is rejected. LAW-TIME is not suspended inside a hypothetical.
+
+**A rejection is an artifact of equal standing to the world**, following the Causal Graph
+Builder's rejection ledger (ADR-0054): every `RejectedIntervention` carries the reason, the
+declaration it was checked against, and an explanation a reader can act on. A run whose
+interventions were all rejected publishes the ledger and no world, and says so — it never
+publishes an unchanged world that reads as "the intervention had no effect".
+
+### Consequences
+
+**Positive.** The commonest way to get a confident wrong answer is closed at the boundary.
+The five kinds are a closed set, so they participate in the content address and a rerun
+reproduces them.
+
+**Negative.** A legitimate question the ontology has not been told about is refused, and the
+remedy is a pack edit rather than a flag. That is deliberate — the alternative is an engine
+that simulates whatever it is asked — but it means the pack's completeness now bounds what
+can be asked, which is R-13's shape on a new surface. Every rejection message names the
+declaration that would have admitted it, so the remedy is legible.
+
+### Reversibility cost
+
+**Medium.** The union is part of the `SimulatedWorld` address; adding a sixth kind is
+additive, removing one changes every address.
+
+---
+
+## ADR-0067 — Attribute mutability is ontology-declared; pack schema 1.1.0
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 13 Counterfactual Simulator; every pack author
+- **Affects interfaces:** `AttributeSpec`, `AttributeView`, `MutableAttributeView`, `mutable_attributes_of`
+
+### Context
+
+ADR-0066's `CHANGE_ATTRIBUTE` needs to know which attributes may be changed, and **nothing in
+this repository declares that.** `AttributeSpec` carries `type`, `semantics`, `origin`,
+`unit` and `enumeration_values`; none of it reaches L0, because `EventTypeView` flattens
+`required_attributes` to a bare `tuple[str, ...]`. A grep for `mutable` across `backend/src`
+and `ontology/` returns nothing but incidental prose about Python holders.
+
+Whether an attribute is something an operator could have set differently is a claim about the
+domain, not about the engine. An engine that decided it — say, by treating any attribute
+outside the event's content address as mutable — would be making an unfalsifiable domain
+judgement in reasoning code, which is exactly the R-16 shape and exactly what LAW-DOMAIN
+exists to prevent.
+
+### Options considered
+
+1. **Declare it in the rule pack** beside module 13's traversal bounds. Leaves the frozen
+   ontology schema alone and moves only `rule_pack_version`. Rejected: mutability is a
+   statement about how the world works, and putting it in the engine's configuration file
+   separates it from the description of the domain it belongs to.
+2. **Derive it in engine code.** Rejected as above.
+3. **Additive ontology pack schema bump.**
+
+### Decision
+
+**Option 3. Pack schema 1.0.0 → 1.1.0, additive.** `AttributeSpec` gains three optional
+fields: `mutable: bool = False`, `admissible_values: tuple[str, ...] = ()` and
+`admissible_range: tuple[float, float] | None = None`. A 1.0.0 pack is read as declaring no
+mutable attribute at all.
+
+**Absent means the intervention CANNOT RUN, never that it is permitted** — ADR-0049's rule
+for the sixth time, and in the direction that refuses rather than admits. An attribute with
+no `mutable: true` is not changeable, a run that was asked to change one reports which
+declaration it would have needed, and no default fills the gap.
+
+`admissible_values`/`admissible_range` are the **declared** bound — what the domain says is
+possible. They are not the observed range, which is measured from the run and is what
+ADR-0070's support envelope compares against. The two are kept separate because a value can
+be perfectly possible and entirely outside anything this dataset witnessed, and collapsing
+them would hide exactly that case.
+
+**At L0, additively and beside the existing views**, following ADR-0056 (magnitude views) and
+ADR-0062 (actionability views): new `AttributeView` and `MutableAttributeView` in
+`core/ontology_view.py`. **`EventTypeView` is not widened** — it is a frozen `core` type and
+its `required_attributes` shape has consumers. The adapter is
+`extraction.ontology_adapters.mutable_attributes_of`.
+
+`ontology_hash` moves, so `run_id` moves and every report regenerates.
+`dataset_version` does **not** move — the mapping is untouched — so no re-import is needed.
+
+### Consequences
+
+**Positive.** A domain claim lives in the domain description. A pack author can see, in one
+place, which levers the simulator will offer. The hospital pack takes the schema bump and
+declares nothing, exercising the absent-means-CANNOT-RUN path for the third time across two
+packs.
+
+**Negative.** The pack schema was frozen at 1.0.0 by ADR-0026 and this unfreezes it, which is
+a precedent: the schema is now a thing that changes when a consumer needs a field, which is
+the pressure ADR-0026 froze it to resist. Mitigated only by the change being additive and by
+`run_id` moving, so the cost is visible. R-16 widens again: `mutable: true` on the wrong
+attribute is a declaration that validates cleanly and is wrong, and nothing can check it.
+
+### Reversibility cost
+
+**Medium.** Removing the fields is a schema bump and an `ontology_hash` move; every pack
+declaring them would need editing.
+
+---
+
+## ADR-0068 — A simulated instant is not a `TimeInterval`, and module 13 constructs no `CausalEdge`
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 13 Counterfactual Simulator
+- **Affects interfaces:** `SimulatedInstant`, `SimulatedEvent`, `SimulatedWorld`
+
+### Context
+
+A `SHIFT_TIMING` intervention produces a time. The obvious carrier is `TimeInterval`, and it
+does not fit: `core/temporal.py` excludes `SIMULATED` from `TIMESTAMP_PROVENANCE_CLASSES`, so
+a `TimeInterval` **cannot** carry simulated provenance. `TimeInterval` is frozen (ADR-0021).
+
+The exclusion is not an oversight to route around. prd.md §37 requires that Observed Facts and
+Counterfactual Simulations "never be conflated in the implementation or the user interface",
+and a simulated instant wearing the same type as an observed one is that conflation, in the
+implementation, at the type level — the place it is hardest to see and easiest to spread.
+
+### Options considered
+
+1. **Add `SIMULATED` to `TIMESTAMP_PROVENANCE_CLASSES`.** One line, and it makes every
+   consumer of `TimeInterval` a consumer of simulated times without any of them being told.
+   Rejected.
+2. **Reuse `TimeInterval` with `ASSUMED` provenance and carry `SIMULATED` on the container.**
+   Rejected: a value that escapes its container is then indistinguishable from an assumption
+   about history, and values escape containers.
+3. **A distinct type.**
+
+### Decision
+
+**Option 3. A simulated world contains no `Event` and no `TimeInterval`.** It contains
+`SimulatedEvent` and `SimulatedInstant`, which name the base artifact they derive from and
+carry `SIMULATED`. A consumer that receives one cannot mistake it for history, because it does
+not have the shape of history — and a serializer cannot either, which is where option 2 fails.
+
+Two consequences follow and are stated rather than discovered later:
+
+**Module 13 constructs no `CausalEdge`.** `CausalEdge.between` requires two `Event`s, and
+module 13 holds none. This is correct on its own terms — `causal_graph_builder/policy.py` is
+the only place in the engine that states an edge, and a simulator minting edges would be a
+second opinion about what the graph contains. A law test asserts it over the AST, as
+`test_law_time_gates_every_promotion.py` asserts the promotion site.
+
+**Module 13 re-verifies LAW-TIME itself**, over simulated instants, through
+`core.perturbation.precedes`. LAW-TIME is not suspended inside a hypothetical: an intervention
+that would place a cause at or after its effect is refused by ADR-0066's gate 4 rather than
+simulated and flagged.
+
+**Copy-on-write is therefore structural rather than careful.** The base world is only ever
+read. `core.immutability.revise` — which already raises on an `OBSERVED` artifact — is never
+called on a base-world artifact in this package, asserted over the AST, so there are two
+independent mechanisms and neither depends on a call site remembering.
+
+### Consequences
+
+**Positive.** prd.md §37's non-conflation holds at the type level, which is the only level at
+which it holds without discipline. The 1000-simulation immutability property test becomes a
+statement about a guarantee rather than a search for a bug.
+
+**Negative.** Two parallel shapes exist for one concept, and a consumer wanting to render a
+base event and a simulated one side by side must handle both. That is the intended cost: the
+alternative is one shape and a provenance field, which is what a reader would then have to
+check every time.
+
+### Reversibility cost
+
+**High.** Collapsing the two types later means re-examining every consumer that was written
+against the distinction.
+
+---
+
+## ADR-0069 — Edge kinds propagate differently; a contributing cause reduces and never eliminates
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 13 Counterfactual Simulator
+- **Affects interfaces:** `core/perturbation.py`
+
+### Context
+
+prd.md §26's five edge kinds are five different claims, and a propagation that treats them
+alike gets the most important case backwards. **The single most common counterfactual error
+is removing one of several joint causes and reporting the effect as prevented.**
+`GLOSSARY.md`'s Joint Cause Group entry already states why that is wrong and
+`causal_graph_builder/graph.py`'s `JointCauseGroup` names module 13 directly: over an
+independent edge the answer to "what if this were removed" is that the effect does not occur;
+over one member of a joint group the honest answer is that the effect may still occur,
+because the others remain.
+
+Separately, `scripts/check_metrics_are_declared.py` scans `counterfactual_engine/`, and it is
+right to: "what would the magnitude have been" is metric arithmetic, and written inline it
+would make the pack's declaration decorative.
+
+### Decision
+
+**Five kinds, five behaviours**, mirroring the `CONTRIBUTING_KINDS` / `MODIFIER_KINDS` split
+`causal_graph_builder/weights.py` already draws:
+
+| Kind | Behaviour under simulation |
+|---|---|
+| `DIRECT` | transmits |
+| `CONDITIONAL` | transmits **only if** `condition_holds` survives re-evaluation against the mutated world; an invalidated condition stops the link |
+| `CONTRIBUTING` | **reduces the effect partially and never eliminates it**; the group is the unit, removed all-or-nothing, and a surviving member keeps the effect standing |
+| `AMPLIFYING` | scales magnitude by `magnitude_multiplier` (> 1.0); excluded from the transmission basis |
+| `INHIBITING` | scales magnitude by `magnitude_multiplier` (∈ [0, 1)); excluded from the transmission basis |
+
+**The re-reachability discipline is inherited, not re-derived.** ADR-0061's rule holds here:
+what stops occurring is `reachable(seed) \ reachable(seed, excluding=n)`, a diff and not a
+subtraction, which is what makes it correct on a diamond. Module 12's `reachable_from` is
+reused for that purely structural sub-question rather than reimplemented.
+
+**Module 13 indexes `PromotedGraph.edges` itself rather than widening `GraphLink`.** Module
+12's `GraphLink` carries `edge_kind` as a string and says in its own docstring that it is
+"never branched on by value here"; adding the payload to that protocol would licence module 12
+to do what it deliberately does not. Module 13 needs `condition_holds`,
+`joint_cause_group_id`, `co_cause_event_ids` and `magnitude_multiplier`, so it builds its own
+payload-carrying index and consumes `GraphView` only for standing and structural reachability.
+
+**The arithmetic lands at L0 in a new `core/perturbation.py`** — `shift_instant`,
+`scale_reading`, `partial_transmission`, `precedes` — for the reason ADR-0061 put
+`core/attribution.py` there. Every domain magnitude is still a walk of a pack-declared
+`MeasurementExpression` tree through `core.measurement.evaluate_measurement`. **No formula
+appears in `counterfactual_engine/`.**
+
+### Consequences
+
+**Positive.** The differentiator is held by code that a test asserts directly, not by a
+comment. Swapping the pack changes the magnitudes and not the propagation rules, which is what
+LAW-DOMAIN means at the value level.
+
+**Negative.** `partial_transmission` needs a share for the removed member, and the only share
+available is the `PropagationWeight` the Causal Graph Builder attributed — which
+`ATTRIBUTION_NOT_MEASUREMENT_NOTICE` already says is not a quantity of anything in the world.
+So the *reduction* a contributing removal produces is an apportionment, not a measurement, and
+the notice is imported and carried onto every such figure rather than restated.
+
+### Reversibility cost
+
+**Medium.** The five behaviours are the module's core; changing one changes every published
+world.
+
+---
+
+## ADR-0070 — Validity is a first-class output: support envelope, extrapolation verdict, sensitivity, assumptions
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 13 Counterfactual Simulator
+- **Affects interfaces:** `ValidityAssessment`, `SupportEnvelope`, `SensitivityFinding`, `Assumption`
+
+### Context
+
+A counterfactual returns a number, and a number is persuasive in a way a hedge is not.
+prd.md §52's own worked example — "Earlier inventory reconciliation would likely reduce
+delivery delay by approximately 11 hours" — is the failure mode in the document itself: an
+observed fact, a statistical association and a simulated figure in one paragraph, with
+"likely" and "approximately" carrying the entire epistemic load.
+
+The PRD asks for none of the machinery that would fix this. It never uses the words
+*validity*, *extrapolation* or *sensitivity*; Principle 5's assumption enumeration binds
+recommendations only. §57 names "Counterfactual plausibility" as an evaluation metric and
+defines it nowhere.
+
+### Decision
+
+**Four things travel with every simulated outcome, as fields rather than as prose.**
+
+1. **Composed confidence, and it can only be weaker.** The belief in a simulated outcome is
+   composed from the links traversed, under a named `core.composition` function recorded on
+   the artifact (`weakest_link_v1` by default), with `path_length` beside it and never blended
+   into it — ADR-0060 one layer up. Monotonicity is a property test, not a comment.
+2. **A support envelope.** For every mutated quantity, the range the run actually observed,
+   the value the intervention asks for, and the distance between them against the pack's
+   declared `support_envelope_tolerance`. Outside it, the outcome is returned with an
+   **`EXTRAPOLATION`** verdict **instead of** a clean number — not beside one. A figure a
+   reader can quote without its warning is a figure that will be quoted without its warning.
+3. **A sensitivity sweep.** Each assumption in the pack's declared
+   `sensitivity_perturbations` is perturbed and the outcome recomputed, and the report states
+   how far the answer moved. An outcome that inverts under a perturbation the data cannot
+   distinguish is reported as unstable rather than as an answer.
+4. **An enumerated assumption list.** Principle 5, extended from recommendations to
+   counterfactuals. Each `Assumption` names what is assumed, why it is needed, and what would
+   falsify it. The no-unobserved-confounder assumption is present on every world as fixed
+   text, held as a property so no revision can soften it.
+
+**The declared bound and the observed range are separate** (ADR-0067). A value inside
+`admissible_range` and outside anything the run witnessed is possible and unsupported, and
+that is precisely the case an `EXTRAPOLATION` verdict exists to name.
+
+### Consequences
+
+**Positive.** The boundary between what the model can simulate and what it merely
+extrapolates is visible in the artifact rather than in a caveat a UI can drop.
+
+**Negative, and it is the serious one.** None of this is calibration. A support envelope says
+the intervention is inside the range the data witnessed; it does not say the answer is right.
+This is OQ-024's argument applied one layer up, and it is **worse** here, because a simulated
+figure reads like a measurement of a thing that did not happen. A decomposed, envelope-checked,
+sensitivity-swept number is more persuasive than a bare one, and persuasiveness is not
+accuracy. Recorded as **R-23**, and the support envelope is measured over the same 150-row
+slice everything else is, which bounds nothing at dataset scale — **R-24**.
+
+### Reversibility cost
+
+**Medium.** The fields are on the published artifact; removing them changes every consumer.
+
+---
+
+## ADR-0071 — Module 13 declares its bounds in the pack (`rule_pack_schema_version` 1.6.0)
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 13 Counterfactual Simulator
+- **Affects interfaces:** `CounterfactualSimulationSpec`
+
+### Context
+
+prd.md §55 gives a counterfactual query five seconds and says nothing about how to stay inside
+it. Every bound this module needs — how deep to propagate, how many nodes to touch, how far
+outside observed support is too far, which assumptions to perturb, which composition to use —
+is a judgement, and ADR-0049, ADR-0053, ADR-0055 and ADR-0063 have all ruled where a judgement
+lives.
+
+### Decision
+
+A new `counterfactual_simulation` namespace on `RulePackSpec`,
+**`rule_pack_schema_version` 1.5.0 → 1.6.0**, additive and defaulted — ADR-0049's
+absent-means-CANNOT-RUN rule for the fifth time. Fields: `maximum_simulation_depth`,
+`affected_subgraph_node_cap`, `support_envelope_tolerance`, `sensitivity_perturbations`,
+`path_composition`.
+
+A 1.5.0 pack still loads, simulates nothing, and **says which declaration it would have
+needed** as a `PolicyGap`. The only numbers in module 13's code are named ceilings
+(`MAX_SIMULATION_DEPTH`), which bound a declaration rather than substitute for one.
+
+`rule_pack_version` participates in `run_id` (ADR-0013), so `run_id` moves — **R-19 for the
+sixth time**, together with ADR-0067's `ontology_hash` move, and the reason every committed
+report under `docs/reports/dataco/` regenerates in this commit. Declaring how far a
+hypothetical may travel is an input to the Run, not a free edit.
+
+The hospital pack takes the schema bump and declares nothing in the new block, exercising the
+absent path for the third time across two packs.
+
+### Consequences
+
+**Positive.** Two packs disagree about how far a hypothetical may reach, in data, with no
+engine change.
+
+**Negative.** A sixth namespace makes the rule pack a large surface, and a pack author now has
+six blocks to fill before the engine runs at full capability. The `PolicyGap` mechanism means
+a partly-filled pack degrades legibly rather than silently, which is the whole defence.
+
+### Reversibility cost
+
+**Low.** Additive and defaulted; removing it returns both packs to 1.5.0 behaviour.
+
+---
+
+## ADR-0072 — OQ-026 is honoured with an explicit opt-in, not amended away
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 13 Counterfactual Simulator
+- **Affects interfaces:** `simulate`, `SimulatedWorld.standing`
+
+### Context
+
+OQ-026 requires modules 13 and 14 to **refuse** an `UNPROMOTED_DIAGNOSTIC` input, and
+`propagation_analyzer/view.py` states it twice — once in the module docstring, once inside
+`DIAGNOSTIC_NOT_STATED_NOTICE` as fixed text: "nothing here is an input to simulation or to
+recommendation."
+
+On the committed 150-row slice the stated graph is **empty**: 0 of 9,492 claims promoted, for
+the reason R-22 gives — not one of the 1,224 events carries an `OBSERVED` timestamp, so no
+temporal verdict is `CERTAIN` and nothing can be promoted. A simulator that only walks the
+stated graph therefore answers the PRD's own worked example with silence. Silence is a true
+answer about the inputs and it exercises none of the machinery, which is the same bind
+ADR-0059 faced for modules 11 and 12.
+
+### Options considered
+
+1. **Refuse, full stop.** Maximally faithful to OQ-026; the module ships demonstrated only on
+   synthetic fixtures and the PRD example returns a refusal.
+2. **Accept either standing and record which**, as modules 11 and 12 do. Removes the
+   guarantee OQ-026 was created to hold.
+3. **Refuse by default; an explicit caller opt-in.**
+
+### Decision
+
+**Option 3.** `simulate(...)` **refuses** a view whose `standing is not GraphStanding.STATED`
+unless the caller passes `accept_unpromoted=True`. The default is the refusal OQ-026 asks for;
+the opt-in is a deliberate act at a named call site, not a configuration value that drifts.
+
+Two structural details make this hold rather than merely intend it:
+
+**Module 13 never names `UNPROMOTED_DIAGNOSTIC`.** It compares `is not GraphStanding.STATED`.
+`diagnostic_view` remains the engine's only construction site of that member, which
+`tests/law/test_ranking_never_collapses.py` already asserts over the AST and which the new law
+test extends to this package. The caller — a script, outside the engine — decides which
+adapter to call.
+
+**`DIAGNOSTIC_NOT_STATED_NOTICE` is imported, never restated.**
+`propagation_analyzer/graph.py` already sets this precedent for
+`ATTRIBUTION_NOT_MEASUREMENT_NOTICE`, with a comment recording that two copies of a caveat
+have already drifted once in this repository.
+
+Diagnostic and stated results are written to separate files under separate names and nothing
+merges them, exactly as `analyze_root_causes.py` does.
+
+### Consequences
+
+**Positive.** OQ-026's guarantee survives — the default path refuses — and the machinery is
+demonstrable on real data. The reason the stated answer is empty stays visible as a property
+of the inputs rather than as an absence of output.
+
+**Negative.** OQ-026's own text says a diagnostic figure will eventually be quoted without its
+notice, and this opens a second door for that to happen through, on an artifact whose numbers
+look more like measurements than a ranking's do (R-23). OQ-026 is left **open** and widened
+rather than closed by this ADR, because nothing here answers its actual concern.
+
+### Reversibility cost
+
+**Low.** Removing the parameter makes the refusal absolute.
+
+---
+
+## ADR-0073 — Operational risk is ontology-declared; pack schema 1.2.0
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 14 Intervention Optimizer; the ontology layer
+- **Affects interfaces:** `ActionabilitySpec`, `ActionabilityView`, `risk_classes_of`, `pack_schema_version`
+
+### Context
+
+prd.md §50 requires an **Operational Risk** on every recommendation. Nothing in this
+repository declared one. The pack already declares `actionable`, `cost_class` and
+`severity_class` per event type, with two ordinal vocabularies in `_base` and
+`provenance_class` pinned to `ASSUMED` (R-15); it declares nothing about what *taking* an act
+risks.
+
+`severity_class` is not that thing and cannot be substituted for it. Severity describes the
+occurrence being acted on; operational risk describes the act. A cheap act against a critical
+occurrence can be entirely safe to take, and an expensive act against a minor one can still
+destabilise the process around it. Collapsing them would make §50's fourth objective a
+restatement of a quantity the ranking already reads.
+
+### Options considered
+
+1. **Derive it in the engine** from severity, validity verdict and provenance mix. No schema
+   change and every field populates — and it writes an unfalsifiable domain judgement into
+   reasoning code, which is precisely R-16's shape and what LAW-DOMAIN exists to stop.
+2. **Report it as permanently `NOT_DECLARED`.** Honest, no schema change, and §50's field is
+   never populated on any pack, so the ranking loses one of four objectives on every run.
+3. **Declare it in the pack**, mirroring how `cost_class` arrived (ADR-0062) and how attribute
+   mutability arrived (ADR-0067).
+
+### Decision
+
+**Option 3.** `pack_schema_version` moves 1.1.0 → **1.2.0**, additively: a `risk_classes`
+ordinal vocabulary in `_base` and an optional `risk_class` on `ActionabilitySpec`, reaching
+L6/L7 as `ActionabilityView.risk_class` through `extraction.ontology_adapters`. Forbidden edge
+F3 is untouched — the class arrives as a name and a rank or it does not arrive.
+
+**The cost/risk asymmetry is deliberate and is the load-bearing part of this ADR.** An
+actionable type MUST declare a cost and MAY omit a risk:
+
+- An absent **cost** would rank a candidate as **free**, placing it above every candidate that
+  declared honestly. That is a wrong number, so the schema refuses it and
+  `candidate.admissible_target` refuses it again.
+- An absent **risk** ranks the candidate **nowhere on that objective**. That is a true
+  statement about the pack. It is reported `NOT_DECLARED` and it **costs** the candidate its
+  risk term in the scalarization — never renormalized away, which would rank an undeclared
+  candidate above one that declared a low risk honestly (module 10's `graph_connectivity`
+  ruling, one layer up).
+
+`provenance_class` stays pinned to `ASSUMED`. Nothing in this system can validate a risk
+declaration any more than it can validate an actionability flag.
+
+DataCo declares `risk_class` on all fourteen actionable types; the hospital pack declares it
+on none of its four. That asymmetry is deliberate and mirrors ADR-0071's: it means the
+`NOT_DECLARED` path is exercised by a real pack rather than only by a fixture.
+
+### Consequences
+
+**Positive.** §50's seventh quantity exists and is declared where every other domain judgement
+in this system lives. `ontology_hash` moves, which is correct: the domain description changed.
+
+**Negative.** A second undetectably mis-declarable field on the same object. R-15 becomes
+**R-25**: a wrong `risk_class` silently reorders the headline list and nothing here can catch
+it. The pack now has three ordinal vocabularies a reader must keep straight, and the
+severity/risk distinction is the one most likely to be conflated by an author.
+
+### Reversibility cost
+
+**Medium.** The field is optional and additive, so removing it is a schema edit plus a
+consumer change — but `ontology_hash` moves again and every committed report re-dates with it.
+
+---
+
+## ADR-0074 — Module 14 estimates benefit only by calling module 13
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Affects modules:** 14 Intervention Optimizer
+- **Affects interfaces:** `recommendation_engine.estimate`
+
+### Context
+
+Module 14 must attach an expected benefit to every act it ranks. Module 13 already simulates a
+hypothetical, validates its premise against the ontology, propagates it correctly per edge
+kind, and assesses how far the answer can be believed.
+
+### Decision
+
+Every benefit figure module 14 publishes is the **return of
+`counterfactual_engine.simulate`**. `estimate.py` builds a typed `RemoveEvent`, hands it over,
+and reads the result. It performs no arithmetic on a returned magnitude.
+
+Asserted **two ways**, because either alone is insufficient: numerically, by a consistency test
+that poses one hypothetical through both modules and requires one figure out of each; and
+structurally, over the AST, by a test that finds `simulate` imported and called in
+`estimate.py` and called in no other file of the package. The numeric test proves they agree
+today; the structural test is what keeps them agreeing.
+
+**Only `RemoveEvent` is proposed, and the restriction is a decision rather than a stub.** The
+other four intervention kinds all need a VALUE — how much earlier, to what, from which state —
+and a value is a domain judgement. A module that guessed one would be inventing the premise of
+its own recommendation. Removal needs no value; it asks the one question this graph can answer
+unaided. A caller who knows the value poses that hypothetical through module 13 directly, which
+is exactly what `scripts/simulate_counterfactuals.py` does.
+
+**Two quantities are published and never blended.** `benefit` is module 13's headline
+difference, in a range. `attributed_consequence` is module 12's `prevented_by_removing` total
+under the pack's declared combination operator. One is a simulated difference and the other an
+apportioned share of an observed total; they are close relatives and are not the same number.
+
+### Consequences
+
+**Positive.** One estimation path, so a recommendation and a counterfactual over the same act
+cannot disagree. Module 13's edge-kind correctness — a contributing cause reduces and never
+eliminates — is inherited rather than reimplemented.
+
+**Negative.** Module 14 inherits every limitation of module 13, including that a `RemoveEvent`
+admits no support envelope at all (see ADR-0075's note on the support component). The headline
+is a single consequence, so an act touching several is understated by the benefit field and
+described properly only by the attributed one.
+
+### Reversibility cost
+
+**High.** A second estimator is exactly what this forbids; re-introducing one would require
+deleting the structural test that exists to prevent it.
+
+---
+
+## ADR-0075 — A recommendation carries confidence, evidence and assumptions at the type level, and its benefit is a range
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Affects modules:** 14 Intervention Optimizer
+- **Affects interfaces:** `Recommendation`, `BenefitRange`, `WithheldRecommendation`
+
+### Context
+
+prd.md Principle 5: a recommendation without its expected benefit, its cost, its confidence,
+its supporting evidence and its assumptions **must not be shown**. The obvious implementation
+is a check in the pipeline. A check has a call site, and a call site can be skipped,
+refactored past, or reached by a second path nobody added the check to.
+
+R-23 sharpens the second half: a simulated figure is MORE persuasive than an inferred one
+because it is concrete, and prd.md §52's own example prints "approximately 11 hours".
+
+### Decision
+
+**Principle 5 is enforced by the type.** `Recommendation` carries `min_length=1` on
+`evidence_item_ids` and on `assumptions`, a `ConfidenceVector` with no default, and
+`min_length=1` on `justification`. Such an object **cannot be instantiated** without them.
+`ProvenanceClass` is pinned to `SIMULATED` and a validator refuses anything else.
+
+**Benefit is a `BenefitRange`, never a point.** Low and high come from module 13's declared
+sensitivity sweep, so the width is a property of the pack's declared assumptions rather than a
+decoration. The type admits exactly two states — fully populated, or an explicit
+`absent_because` — and a validator refuses any third. An `EXTRAPOLATION` verdict makes the
+range absent rather than qualified (ADR-0070).
+
+**A zero-width range must say why its width is zero.** Two cases produce one legitimately:
+an **elimination**, where the benefit is the whole magnitude and there is no apportioned share
+to perturb; and a **collapsed sweep**, where the figure being perturbed is zero. Both publish
+`degenerate_because`. Without this, a collapsed range would be a point estimate wearing a
+range's shape and a reader could not tell an exact figure from a sweep that never ran.
+
+**The elimination branch is load-bearing.** Module 13's headline is a delta carrying a
+magnitude on *both* sides, which an eliminated consequence does not. Without a branch for it,
+module 14 could never recommend breaking a direct cause — the single most valuable act this
+engine can identify. The uncertainty is not hidden by the zero width; it moves to whether the
+elimination happens at all, which the confidence vector carries.
+
+**One departure from the missing-component rule, stated because it looks like a violation.**
+The `support_envelope` component is **omitted**, not scored zero, when module 13 built no
+envelope at all. A support envelope asks whether a changed VALUE lies inside the witnessed
+range; a removal changes no value, so none is attempted and `NOT_ASSESSABLE` means "the
+question does not apply", not "unsupported". Charging for the absence of a check that cannot
+exist would score every removal at zero under `minimum_v1` permanently, making module 14
+structurally incapable of recommending anything while looking like a finding about the data.
+An envelope that *was* built and returned `NOT_ASSESSABLE` scores zero, exactly as module 10's
+ruling requires. The distinction is drawn on `support_envelope_count`.
+
+**The withheld ledger is of equal standing to the list**, and carries what was measured before
+the candidate was withheld — benefit, cost, risk, coverage, belief — so a reader deciding
+whether a threshold is set correctly can see what it excluded. It carries no confidence vector,
+no evidence chain, no assumptions and no justification, so it cannot be mistaken for a
+recommendation; those absent `min_length=1` fields are what draw the line.
+
+### Consequences
+
+**Positive.** Principle 5 holds on every path there will ever be, not just the tested one. No
+point estimate can appear anywhere in the artifact.
+
+**Negative.** A range is harder to act on than a number, and a reader wanting one will take the
+midpoint anyway. The support-envelope exception is subtle and is the most likely thing here for
+a later author to "fix" into a violation.
+
+### Reversibility cost
+
+**High.** Consumers will read these fields as guaranteed present.
+
+---
+
+## ADR-0076 — Cut sets are bounded-exact then greedy, and say which
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Affects modules:** 14 Intervention Optimizer
+- **Affects interfaces:** `CutSet`, `SearchRegime`, `find_cut_sets`
+
+### Context
+
+A chain with joint causes has no single intervention point: removing one contributor of a
+conjunctive cause does not prevent the effect (ADR-0069), so the honest recommendation is a
+SET. Finding minimal such sets is NP-hard and prd.md §55 allows five seconds.
+
+### Decision
+
+At or below the pack's `cut_set_exact_ceiling`, every subset up to `portfolio_size_cap` is
+enumerated and the result is **provably minimal**. Above it, a greedy set cover runs and every
+set it returns is labelled `GREEDY_NOT_PROVEN_MINIMAL`, carrying `not_minimal_because` naming
+the ceiling that bound it. A greedy cover is often minimal; this module did not look and does
+not claim it. "Minimal" is a claim, and the difference between a proved claim and a plausible
+one is exactly what a reader needs.
+
+**Chains are counted as (source, outcome) PAIRS, never as routes.** Two routes between one
+source and one outcome are one chain, because they are one thing an operator cares about.
+Counting routes would make a diamond look like twice the opportunity — ADR-0061's error in a
+new place.
+
+**Every singleton is recorded under both regimes.** A cut-set search answers "which acts
+together break the most chains"; it does not answer "what is each act worth", and a ranked list
+needs both. The greedy branch emits only its own cumulative prefixes — at most `size_cap` of
+them — so without this a run over two hundred candidates would score three and publish a
+top-three list while calling it a top ten. The first real run of
+`scripts/recommend_interventions.py` did exactly that.
+
+**A joint group larger than the size cap is REFUSED and named**, not admitted over the bound
+and not truncated under it. Joint expansion is the only way a set can exceed the cap; letting
+it through would leave an artifact that looks bounded and is not, and truncating it would ship
+an act that cannot work. The refusal surfaces as a policy gap, which leaves a pack author the
+two real choices: raise the cap, or accept that the act is beyond one operator's single act.
+
+### Consequences
+
+**Positive.** Minimality is claimed only where it was established. The budget is met by
+declared bounds rather than by an implementation detail.
+
+**Negative.** On any realistic graph the greedy branch is the one that runs, so `EXACT` will be
+rare outside tests, and a reader may come to treat the label as noise.
+
+### Reversibility cost
+
+**Low.**
+
+---
+
+## ADR-0077 — Portfolio benefit is re-simulated jointly, never summed
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Affects modules:** 14 Intervention Optimizer
+- **Affects interfaces:** `PortfolioBenefit`, `portfolio_benefit`
+
+### Context
+
+Stated as an operator experiences it: **shown two recommendations worth eleven hours each,
+they plan for twenty-two.** If both acts lie on one chain the second saves what the first
+already saved. Every part of the system upstream is correct and the operator is still wrong,
+because nothing told them the two interact.
+
+### Decision
+
+A set's benefit is obtained by passing the **whole set to `simulate` in one call**. Not by
+simulating each act and combining: any combination rule would be a model of how benefits
+interact, and this engine has no standing to hold one. Module 13 already validates a set
+atomically (ADR-0066) and propagates it together.
+
+`sum` appears nowhere in the package and a law test asserts it **over the AST** — the first
+version of that test was textual and failed on `portfolio.py`'s own docstring promising the
+property, which is CONVENTIONS.md §6a's "AST, not regex" lesson arriving unbidden. The naive
+total is taken under a named operator in `core.attribution`.
+
+**The naive total is published beside the joint figure**, not instead of it, with
+`overlap_loss` between them. A report that silently corrected the overlap would be right and
+would teach a reader nothing; the overlap is the finding.
+
+**No loss is published for an independent pair**, and its absence carries a reason rather than
+reading as a loss of zero. Module 13's benefit is a HEADLINE — the single largest consequence
+affected. Where two acts touch *different* consequences the naive total adds two headlines
+while the joint figure reports one, and the difference between them measures that mismatch
+rather than any overlap. Publishing it anyway would put a confident, specific, wrong number on
+the artifact: the exact failure this file exists to prevent, committed by the file that exists
+to prevent it.
+
+### Consequences
+
+**Positive.** The most consequential arithmetic error a recommender can make is structurally
+unavailable, and the interaction is visible rather than merely corrected.
+
+**Negative.** A set costs an extra simulation, which is the largest single contributor to the
+§55 budget. The combined quantity across several consequences lives on
+`BenefitEstimate.attributed_consequence` rather than in the portfolio, which a reader looking
+only at the portfolio block will miss.
+
+### Reversibility cost
+
+**High.**
+
+---
+
+## ADR-0078 — Multi-objective scalarization lives in `core`, with a Pareto frontier beside it
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Affects modules:** 14 Intervention Optimizer; `causalog.core`
+- **Affects interfaces:** `core.scalarization`
+
+### Context
+
+prd.md §50's ranking function is three lines: highest benefit, lowest cost, highest confidence.
+That is a preference SEQUENCE, not a procedure — it says nothing about the only interesting
+case, where one act is better on benefit and worse on cost. Making it a procedure needs
+weights, and weights are a judgement.
+
+`CONVENTIONS.md` §6a puts `recommendation_engine/` inside the metric lint and lists `cost` and
+`impact` among its stems, so the arithmetic cannot live there. §6a's own scope note excludes
+`core/`, whose arithmetic is over engine concepts rather than domain metrics (ADR-0009).
+
+### Decision
+
+`core/scalarization.py`, modelled on `core.ranking`: a `Scalarizer` protocol, a
+`MappingProxyType` registry, a named default, quantization at
+`FLOAT_QUANTIZATION_PLACES`. It holds no weights and no vocabulary — ordinal ranks arrive with
+the span they were drawn from, because a function that looked up a cost class would be a store.
+
+**`pareto_front_v1` is published beside `weighted_desirability_v1`, never instead of it.** A
+scalarization is one traversal of a trade-off surface; reweight it and the sequence changes,
+and nothing on a ranked list tells a reader how fragile first place is. Frontier membership is
+weight-independent, so `on_pareto_frontier` is a stronger claim than a high desirability and is
+a separate field. ADR-0008 refused a blended root-cause score outright; this is the weaker case
+— an operator genuinely must pick one act — so the scalar is permitted, and only with the
+surface printed next to it.
+
+**Absence is handled differently in the two, deliberately.** In the scalar, a missing objective
+scores at its worst and COSTS the candidate: renormalizing would rank a candidate whose risk
+nobody declared above one that declared a low risk honestly. On the frontier, a point holding
+any unmeasured coordinate is EXCLUDED rather than ranked worst, because membership is a CLAIM —
+"nothing beats this" — and that claim cannot be made about a partly unmeasured candidate.
+
+The scalarizer's belief parameter is named `belief_scalar`, not `confidence`, for the reason
+`core.ranking` names its own `chain_scalar`: `check_confidence_is_a_vector.py` refuses a float
+bound to a confidence-shaped name, and it is right to.
+
+### Consequences
+
+**Positive.** One place holds the trade-off arithmetic, under a versioned name every ranked
+artifact records, so a reader can recompute the sequencing and disagree with it.
+
+**Negative.** `core` grows a module whose only consumer is L7. The frontier is a second
+sequencing a reader must reconcile with the first, and the two will sometimes disagree — which
+is the point and will still be read as an inconsistency.
+
+### Reversibility cost
+
+**Medium.**
+
+---
+
+## ADR-0079 — Module 14 declares its bounds in the pack (`rule_pack_schema_version` 1.7.0)
+
+- **Date:** 2026-09-07
+- **Status:** accepted
+- **Affects modules:** 14 Intervention Optimizer
+- **Affects interfaces:** `RecommendationSpec`, `RulePackSpec.recommendation`
+
+### Context
+
+ADR-0049's absent-means-CANNOT-RUN rule, applied for the sixth time (after ADR-0053, ADR-0055,
+ADR-0063 and ADR-0071). prd.md §50 gives a ranking function with no weights; §55 gives five
+seconds with no bounds.
+
+### Decision
+
+A `recommendation` namespace at `rule_pack_schema_version` **1.7.0**, additive and defaulted:
+`scalarization`, `objective_weights`, `cut_set_exact_ceiling`, `cut_set_node_cap`,
+`portfolio_size_cap`, `maximum_recommendations`, `minimum_belief_to_publish`. An absent
+declaration means the policy cannot run, is reported as a named policy gap, and is never
+defaulted.
+
+**Every objective is weighted explicitly, including at zero.** An omitted weight and a zero
+weight mean the same thing to the arithmetic and completely different things to a reviewer of
+the pack, and only one of the two can be reviewed. The validator refuses an incomplete,
+repeating, unsequenced or all-zero weighting.
+
+**The confidence floor is a GATE, not a term.** A weight lets a large benefit buy its way past
+a weak belief; a floor does not. A ranked list is read as a list of things to do and position
+in it outweighs any number printed beside it, so a candidate below the floor leaves the list
+and enters the ledger naming the threshold. This is module 10's gated-component ruling
+(ADR-0052) one layer up.
+
+DataCo declares the block fully. The hospital pack declares nothing in it, exercising the
+CANNOT-RUN path from a real pack.
+
+**The declared floor was chosen on principle and not to make this run produce output**, and the
+pack says so beside the value. At 0.50 — "more likely than not that the chain holds" — the
+committed slice publishes **zero** recommendations under both standings. That is the finding,
+and it is recorded rather than tuned away.
+
+### Consequences
+
+**Positive.** The sharpest numbers in the system — the weights that decide what an operator
+sees first — are visible, reviewable, and travel on every artifact. Editing them mints a new
+Run, so a ranking under one weighting can never be mistaken for a ranking under another.
+
+**Negative.** `rule_pack_version` moves to 1.7.0, which moves `run_id` and re-dates every
+committed report. Combined with ADR-0073's `ontology_hash` move, this is the second time two
+`RunKey` inputs have moved in one commit.
+
+### Reversibility cost
+
+**Low.** Additive and defaulted.

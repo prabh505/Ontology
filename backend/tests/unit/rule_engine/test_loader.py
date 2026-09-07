@@ -15,13 +15,18 @@ from causalog.rule_engine import (
     load_rule_pack,
     rule_pack_hash,
 )
+from causalog.rule_engine.dsl import RULE_PACK_SCHEMA_VERSION
 from tests.fixtures.rules import STAGE_ONE, pack, rule, vocabulary
 
 
 def _write(tmp_path: Path, *rules: dict[str, Any], **header: Any) -> Path:
     """Write a pack document to disk and return its path."""
     document: dict[str, Any] = {
-        "rule_pack_schema_version": "1.0.0",
+        # Read from the DSL rather than pinned as a literal, so an additive schema bump does
+        # not fail every loader test for a reason unrelated to what it asserts. The
+        # version-mismatch test below overrides this explicitly -- the one place a literal
+        # belongs, because there the version IS the thing under test.
+        "rule_pack_schema_version": RULE_PACK_SCHEMA_VERSION,
         "rule_pack_id": "fixture",
         "rule_pack_version": "1.0.0",
         "ontology_pack": "fixture",

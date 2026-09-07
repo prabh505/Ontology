@@ -51,10 +51,103 @@ def test_the_dataco_rule_pack_loads_with_no_errors(vocabulary: object) -> None:
 def test_the_pack_declares_the_version_that_participates_in_the_run_id(
     vocabulary: object,
 ) -> None:
-    """`rule_pack_version` was `unset` in CONTEXT.md §7 until this pack existed."""
+    """`rule_pack_version` was `unset` in CONTEXT.md §7 until this pack existed.
+
+    Moved 1.0.0 -> 1.1.0 when the pack gained its `candidate_generation` block for module 9,
+    1.1.0 -> 1.2.0 when it gained `confidence_scoring` for module 10 (ADR-0053), and
+    1.2.0 -> 1.3.0 when it gained `graph_construction` for the Causal Graph Builder
+    (ADR-0055), 1.3.0 -> 1.4.0 when it gained `derived_precedence_temporal_support`
+    (ADR-0057), and 1.4.0 -> 1.5.0 when it gained `propagation_analysis`,
+    `root_cause_analysis` and `pattern_mining` for modules 12 and 11 and the pattern miner
+    (ADR-0063), 1.5.0 -> 1.6.0 when it gained `counterfactual_simulation` for module 13
+    (ADR-0071), and 1.6.0 -> 1.7.0 when it gained `recommendation` for module 14 (ADR-0079).
+    No bump is incidental: `rule_pack_version` participates in `run_id`
+    (ADR-0013), so declaring a proximity window, declaring how to score one, declaring which
+    claims the engine will stand behind, or declaring how far consequence travels each mints
+    a new Run and re-dates every artifact derived under it. Pinned here so that a version
+    edit is a deliberate act with a failing test attached, rather than a silent re-dating of
+    every committed report.
+
+    This test has now fired SEVEN times, which is it working. R-19 predicted exactly this,
+    and each firing has been followed by regenerating every report under the new `run_id`
+    rather than by editing the pin alone.
+
+    The sixth firing was the first where `run_id` moved for TWO reasons at once: ADR-0071
+    moved `rule_pack_version` and ADR-0067 moved `ontology_hash` in the same commit, and both
+    are `RunKey` inputs. A pin that tracked only one of them would have gone green while the
+    Run underneath it changed.
+
+    The seventh firing has the same shape and is therefore no longer a surprise: ADR-0079
+    moved `rule_pack_version` to 1.7.0 and ADR-0073 moved `ontology_hash` by adding the
+    `risk_classes` vocabulary and a `risk_class` per actionable event type. Two `RunKey`
+    inputs, one commit, one new Run. That this now reads as ordinary is the point of pinning
+    it: the second occurrence of a hazard should be routine, not a rediscovery.
+    """
     loaded = load_rule_pack(RULES, vocabulary=vocabulary)  # type: ignore[arg-type]
-    assert loaded.rule_pack_version == "1.0.0"
+    assert loaded.rule_pack_version == "1.7.0"
     assert loaded.rule_pack_hash.startswith("rul:")
+
+
+def test_the_pack_declares_every_parameter_module_nine_needs(vocabulary: object) -> None:
+    """A generator with no declared parameter does not run, and must say so rather than zero.
+
+    Pinned here so that removing a declaration is a test failure naming the generator it
+    switches off, rather than a silently emptier candidate graph. The DataCo pack declares
+    all of them; the hospital pack deliberately declares none, and that asymmetry is the
+    point -- it exercises both halves of the 1.1.0 contract.
+    """
+    loaded = load_rule_pack(RULES, vocabulary=vocabulary)  # type: ignore[arg-type]
+    parameters = loaded.pack.candidate_generation
+
+    assert parameters.proximity_windows, "temporal_proximity would not run"
+    assert parameters.structural_max_hops is not None, "structural_path would not run"
+    assert parameters.structural_path_strength is not None
+    assert parameters.minimum_support_count is not None, "historical_frequency would not run"
+    assert parameters.historical_frequency_strength is not None
+    assert parameters.minimum_lift is not None, "statistical_association would not run"
+    assert parameters.statistical_association_strength is not None
+    assert parameters.shared_entity_strength is not None, "shared_entity would not run"
+    assert parameters.shared_identifier_strength is not None
+    assert parameters.per_effect_candidate_cap is not None
+
+    # Every window states why it is that wide. A threshold nobody justified is a threshold
+    # nobody can argue with, which is the same requirement `Rule.rationale` carries.
+    for entry in parameters.proximity_windows:
+        assert entry.rationale.strip()
+        assert 0.0 <= entry.evidence_strength <= 1.0
+
+
+def test_the_pack_declares_every_parameter_module_ten_needs(vocabulary: object) -> None:
+    """A scorer with no declared parameter is NOT SCORABLE, and that is contagious.
+
+    Module 10 refuses to invent a threshold, so an absent declaration does not degrade one
+    component gracefully -- it marks the component missing, which lowers `measured` and can
+    drop the whole edge below `minimum_scored_components` into `INSUFFICIENT_EVIDENCE`.
+    Removing a declaration here is therefore not a small edit, and it should fail a test that
+    names the scorer it switches off rather than showing up as a quieter graph.
+
+    `derived_precedence_temporal_support` is the newest of these and the reason the pack is
+    at 1.4.0: without it, an edge whose precedence module 1 measured as arithmetic scores no
+    temporal support at all rather than the capped value the pack intends (ADR-0057).
+    """
+    loaded = load_rule_pack(RULES, vocabulary=vocabulary)  # type: ignore[arg-type]
+    scoring = loaded.pack.confidence_scoring
+
+    assert scoring.lift_reference is not None, "statistical_support would not run"
+    assert scoring.small_sample_prior_count is not None, "historical_support would not run"
+    assert scoring.evidence_count_saturation_k is not None, "evidence_count would not run"
+    assert scoring.temporal_reference_seconds is not None, "temporal_support would not run"
+    assert scoring.undetermined_temporal_support is not None
+    assert (
+        scoring.derived_precedence_temporal_support is not None
+    ), "an edge resting on a confirmed derivation would score no temporal support at all"
+    assert scoring.minimum_scored_components is not None
+
+    # A derived precedence is worth strictly LESS than a tie the data could not break: the
+    # tie placed both events, the derivation placed one and restated it. A pack that inverts
+    # this is saying an instant its own source computed is better evidence than one it
+    # recorded twice, which is not a position any pack should hold by accident.
+    assert scoring.derived_precedence_temporal_support <= scoring.undetermined_temporal_support
 
 
 def test_supplying_the_pack_makes_the_rule_coverage_check_run(vocabulary: object) -> None:

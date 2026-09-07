@@ -1,4 +1,4 @@
-# Rule coverage — `dataco` v1.0.0
+# Rule coverage — `dataco` v1.6.0
 
 Ontology pack: `dataco`  
 Rules: **23 enabled** of 24 declared  

@@ -1,6 +1,6 @@
 # contracts.md — the frozen public interface of `causalog.core`
 
-**Contract version: 1.4.0** · Frozen 2026-08-25 by ADR-0025 · Layer L0
+**Contract version: 1.10.0** · Frozen 2026-08-25 by ADR-0025 · Layer L0
 > *1.1.0 (2026-08-28, ADR-0028): `IdentifierPrefix` gains `ONTOLOGY = "ont"`. Purely
 > additive — no existing address recipe changes, so no identifier in any store moves and
 > `engine_version` does not bump.*
@@ -30,6 +30,72 @@
 > type — it is the plain-view seam ADR-0042's `Timeline` note describes — but the
 > `IdentifierPrefix` change is to a frozen enum and is recorded here for that reason.*
 
+> *1.5.0 (2026-09-02, ADR-0048): `IdentifierPrefix` gains `EVIDENCE_ITEM = "evi"`, and
+> `core/types/candidate_edge.py` adds `CandidateEdge` as a **`draft`** type. Purely additive:
+> **no frozen type gains, loses, or retypes a field**, no existing address recipe moves, no
+> identifier in any store changes, and `engine_version` does not bump. `CandidateEdge` is
+> `draft` and is documented in §5 beside `CausalEdge` because the two are easily confused and
+> the distinction is load-bearing. The `EVIDENCE_ITEM` prefix exists because `EvidenceItem`
+> carried a free-form identifier while nothing needed to MINT one; module 9 mints thousands
+> per run, and an unaddressed item is one a rerun cannot reproduce.*
+
+> *1.6.0 (2026-09-03, ADR-0052): **no frozen type gains, loses, or retypes a field.**
+> `ConfidenceComponent` and `ConfidenceVector` are untouched. The version moves because the
+> admissible `component_name` set — which §5 states and which
+> `confidence_schema_version` versions — goes from six names to eight, and because
+> `core/aggregation.py` registers a third strategy, `gated_weighted_mean_v1`, in which two
+> of the eight components act as **ceilings rather than addends**.
+>
+> `weighted_mean_v1`, `minimum_v1` and `DEFAULT_COMPONENT_WEIGHTS` are byte-identical, so
+> every scalar already stored under them still recomputes to itself. That is the whole
+> reason 2.0.0 arrives as a new function beside the old one rather than as a revision of it.
+> No address recipe moves, no identifier in any store changes, and `engine_version` does not
+> bump — the arithmetic that changed is selected by name from inside the artifact.
+>
+> `AGGREGATOR_COMPONENT_NAMES` is added so a consumer can ASK what an aggregator accepts;
+> the registry stopped being uniform the moment a second schema version landed, and
+> discovering the answer by being refused is not a contract.*
+
+> *1.7.0 (2026-09-04, ADR-0056): **no frozen type gains, loses, or retypes a field.** Two
+> purely additive changes, both outside the frozen set.
+>
+> `core/ontology_view.py` gains `MeasurementExpressionOperator` (the full nine-member closed
+> operator set), `MeasurementKindView` (the full seven-member kind set),
+> `MeasurementExpressionView` and `MagnitudeMeasurementView`. These sit **beside**
+> `DurationExpressionOperator` and `DurationMeasurementView` rather than widening them, and
+> that placement is the decision: widening the duration enum would let a duration measurement
+> declare a `RATIO` that `state_engine`'s evaluator refuses, and the refusal would arrive at
+> evaluation time instead of at load time. `core/ontology_view.py` is a `draft` plain-view
+> seam, not a frozen type, so this is recorded here for traceability rather than because it
+> touches a frozen contract.
+>
+> `core/measurement.py` is new: `evaluate_measurement`, the one walk of a declared operator
+> tree in this repository. It is typed against a structural `MeasurementNode` protocol rather
+> than a concrete view, so it evaluates both mirrors without a conversion step and without
+> either learning about the other. The cost is stated rather than discovered: **nothing here
+> can check at type level that the two operator enums stay in step**, and that is checked by
+> a test instead. `graph_engine.state_engine.measurement.evaluate_duration_seconds` becomes a
+> thin restriction of it — same supported operators, same refusal, same message — so no
+> existing consumer moves.
+>
+> No address recipe moves, no identifier in any store changes, and `engine_version` does not
+> bump: nothing that was computable before computes differently now.*
+>
+> *1.8.0 (2026-09-05, ADR-0057): `core/precedence.py` is new, holding
+> `temporal_binding_source`, `DerivedPrecedence` and `DerivedPrecedenceIndex` — the carrier
+> for module 1's measurement of which of a source's instants were COMPUTED from another
+> rather than recorded, read by module 10's `temporal_support`. At L0 so that
+> `causal_engine` never imports `ingestion`.
+>
+> **`DerivedPrecedenceIndex.precedence_for` compares `TimeInterval.source` locators by
+> string equality and may never parse one.** That locator is an opaque provenance string;
+> engine code that split or pattern-matched it would be reading the source description,
+> which is domain arriving as a value. The lookup is also DIRECTED — a reversed pair does
+> not match — because the measurement claims one direction only.
+>
+> Purely additive. No existing type changes shape, no address recipe moves, no identifier in
+> any store changes, and `engine_version` does not bump.*
+
 > This document is the module contract document `CONTEXT.md` OQ-009 required. It specifies
 > every public type in `causalog.core`: its fields, its invariants, how it fails, and what
 > it is forbidden from doing.
@@ -42,6 +108,65 @@
 > Where this document and `CONVENTIONS.md` disagree, `CONVENTIONS.md` governs *how* and this
 > document governs *what the types are* — and the disagreement is itself a defect to be
 > filed, not reconciled by preference.
+
+> *1.9.0 (2026-09-06, ADR-0060, ADR-0061, ADR-0062, ADR-0063): **no frozen type gains, loses,
+> or retypes a field.** Purely additive, in four places.
+>
+> `IdentifierPrefix` gains `PROPAGATION = "prp"`, `ROOT_CAUSE = "rca"` and `PATTERN = "pat"`,
+> as `ONTOLOGY`, `MAPPING`, `TIMELINE`, `EVIDENCE_ITEM` and `RULE_PACK` were added before them.
+> Each names an artifact a rerun must reproduce byte-identically. **No existing address recipe
+> moves and no identifier in any store changes.**
+>
+> `core/ontology_view.py` gains `ActionabilityView` and `OrdinalClassView`, added BESIDE the
+> magnitude views rather than by widening them — the same choice ADR-0056 made and for the same
+> reason: widening a view lets a declaration reach a consumer that has no meaning for it, and
+> the refusal then arrives at evaluation time instead of at load time.
+>
+> Three new L0 modules, none of them frozen and all of them registries whose names travel with
+> the data: `core/composition.py` (`PATH_COMPOSERS` — how a chain's belief derives from its
+> links, distinct from how one claim's components roll up), `core/attribution.py` (combining
+> attributed magnitudes over a consequence SET without double counting), and `core/ranking.py`
+> (`RANKERS` — ADR-0008's prevented-times-confidence criterion under a versioned name). All
+> three sit at L0 for the reason `core/measurement.py` does: `check_metrics_are_declared.py`
+> refuses this arithmetic inside a reasoning package, and a generic routine that never mentions
+> a metric is the sanctioned alternative that lint exists to push code toward.
+>
+> `engine_version` does not bump. `rule_pack_schema_version` moves 1.4.0 → 1.5.0 separately
+> (ADR-0063), and `run_id` moves with it — which is ADR-0013 working as designed and is why
+> every committed report under `docs/reports/dataco/` was regenerated in this commit.*
+
+> *1.10.0 (2026-09-07, ADR-0067, ADR-0068, ADR-0069): `IdentifierPrefix` gains
+> `INTERVENTION = "itv"` and `CAUSAL_GRAPH = "cgr"`; `core/ontology_view.py` gains
+> `AttributeView` and `MutabilityView`; and one new L0 module lands, `core/perturbation.py`.
+> Purely additive: **no frozen type gains, loses, or retypes a field**, no existing address
+> recipe moves, no identifier in any store changes, and `engine_version` does not bump.
+>
+> `CAUSAL_GRAPH` exists because `CONVENTIONS.md` §9 addresses a simulated world as
+> `sim:digest(base_graph_id | mutations)` and nothing had ever needed the first half. A
+> `run_id` will not serve as one: `PromotedGraph` and module 10's `CausalGraph` are both
+> scoped to a run and **one run holds both**, so addressing on the run alone would give the
+> graph the engine states and the graph it declined to state a single identifier.
+>
+> `core/perturbation.py` carries `SimulatedInstant` and the arithmetic a hypothetical performs
+> on an instant and on a magnitude. It sits at L0 for the reason `core/attribution.py` does
+> (ADR-0061): `check_metrics_are_declared.py` scans `counterfactual_engine/` and refuses this
+> arithmetic there, correctly.
+>
+> **`SimulatedInstant` is deliberately not a `TimeInterval`, and the frozen type was NOT
+> widened to make it one.** `TIMESTAMP_PROVENANCE_CLASSES` excludes `SIMULATED` (§3), and the
+> one-line change that would admit it — adding the member to that frozenset — would make every
+> consumer of `TimeInterval` a consumer of simulated times without any of them being told.
+> prd.md §37 requires that observed facts and counterfactual simulations never be conflated
+> "in the implementation or the user interface"; one type carrying both is that conflation at
+> the level where it is hardest to see and easiest to spread. The cost is two parallel shapes
+> for one concept, paid deliberately and recorded in ADR-0068.
+>
+> `AttributeView` / `MutabilityView` land beside the magnitude views (1.5.0) and the
+> actionability views, on the same terms: `EventTypeView.required_attributes` stays a bare
+> `tuple[str, ...]` and is not widened. `ontology_hash` moves separately (pack schema
+> 1.0.0 → 1.1.0, ADR-0067) and `rule_pack_schema_version` moves 1.5.0 → 1.6.0 separately
+> (ADR-0071); `run_id` moves with BOTH, which is why every committed report under
+> `docs/reports/dataco/` was regenerated in this commit.*
 
 ---
 
@@ -73,10 +198,12 @@ dependency graph require one.
 | `core/identifiers.py` | content addressing and canonical encoding |
 | `core/provenance.py` | the provenance classes and their algebra |
 | `core/temporal.py` | interval timestamps and the LAW-TIME verdict |
-| `core/aggregation.py` | the confidence aggregator registry |
+| `core/aggregation.py` | the confidence aggregator registry, its weight tables, and the gate ceilings |
 | `core/serialization.py` | the canonical wire format |
 | `core/immutability.py` | the observed-fact guard |
 | `core/derivation.py` | derived views that are functions, not fields |
+| `core/measurement.py` | the one walk of an ontology-declared operator tree (ADR-0056) |
+| `core/ontology_view.py` | the plain views of ontology configuration that L4–L10 read (F3) |
 | `core/run.py` | the reproducibility unit and the output envelope |
 | `core/types/` | the canonical types |
 | `core/ports/` | the Protocols infrastructure implements (ADR-0014) |
@@ -399,14 +526,35 @@ present when it ran.
 `evidence_record_ids`. A component expressing a count is normalized *before* becoming a
 component, so no aggregator has to know which components are counts.
 
-**The admissible `component_name` values are closed under the default aggregator**, and are
-listed here because a consumer that invents a name gets a `ContractViolationError` from
-`weighted_mean_v1` at runtime rather than a type error at the boundary. They are, with the
-weights `weighted_mean_v1` renormalizes over them: `rule_support` (0.25),
-`temporal_support` (0.20), `historical_support` (0.15), `statistical_support` (0.15),
-`evidence_count` (0.15), `graph_connectivity` (0.10). The set is part of
-`confidence_schema_version`; adding a name means shipping a new aggregator version beside
-it. `minimum_v1` is name-agnostic and accepts any name.
+**The admissible `component_name` values are closed under each weighted aggregator**, and are
+listed here because a consumer that invents a name gets a `ContractViolationError` at runtime
+rather than a type error at the boundary. `AGGREGATOR_COMPONENT_NAMES` declares which names
+each registered aggregator accepts, because the registry is no longer uniform.
+
+At `confidence_schema_version` **1.0.0**, `weighted_mean_v1` renormalizes these six over
+those supplied: `rule_support` (0.25), `temporal_support` (0.20), `historical_support`
+(0.15), `statistical_support` (0.15), `evidence_count` (0.15), `graph_connectivity` (0.10).
+**Unchanged and still registered** — a vector naming it still recomputes to the same scalar.
+
+At **2.0.0** (ADR-0052), `gated_weighted_mean_v1` takes **eight** names and requires all of
+them. Six are addends, renormalized over the declared table: `rule_support` (0.28),
+`historical_support` (0.17), `statistical_support` (0.17), `evidence_diversity` (0.16),
+`evidence_count` (0.12), `graph_connectivity` (0.10). Two are **gates**, entering by `min`
+rather than by sum: `temporal_support` and `contradiction_freedom` each map through a
+piecewise-linear, non-decreasing ceiling and cap the scalar.
+
+```
+scalar = min(weighted_mean(the six addends),
+             ceiling(temporal_support), ceiling(contradiction_freedom))
+```
+
+Monotone in all eight, and the ceilings are quantized so the cap holds at the resolution the
+scalar is stored at. Unlike `weighted_mean_v1`, an absent component does **not** abstain
+here: module 10 never omits one, so an absent name means the vector was assembled elsewhere
+and is refused. `minimum_v1` is name-agnostic and accepts any name.
+
+The name set is part of `confidence_schema_version`; adding a name means shipping a new
+aggregator version beside the old one, never revising it in place.
 
 `ConfidenceVector`: `components` (non-empty, sorted by name, no repeats), `scalar` in
 `[0,1]`, `aggregation`, `provenance_class`.
@@ -467,6 +615,60 @@ cannot re-check (DEF-0002).
 `source_event_id != target_event_id`; `propagation_weight` in `[0,1]`; `run_id` present.
 Every one of these raises `LawViolationError` except the self-edge, the weight bound, and
 the empty `run_id`, which raise `ContractViolationError`.
+
+### `CandidateEdge` — `core/types/candidate_edge.py` (draft, ADR-0048)
+
+`candidate_edge_id`, `generator_id`, `source_event_id`, `target_event_id`, `payload`,
+`evidence`, `provenance_class`, `temporal_verdict`, `temporally_unverifiable`, `run_id`.
+
+**Derived properties:** `edge_kind` (read from the payload), `admits_promotion` (reads the
+two temporal fields and nothing else — it says only that time does not block promotion, never
+that the candidate has merit), `sort_key`.
+
+**What is deliberately ABSENT is the contract.** There is no `confidence` field and no
+`propagation_weight`. Module 9 is forbidden from assigning confidence, and the enforcement is
+that the artifact has nowhere to put one — a generator cannot score, rather than being asked
+not to. Module 10 constructs `CausalEdge` from these, and `CausalEdge` is where a
+`ConfidenceVector` first appears.
+
+**Not `CausalEdge`, and the difference matters at every use.** A candidate is one generator's
+proposal, carrying its own evidence; a causal edge is the single scored claim module 10
+assembles from every proposal over that pair. Several candidates collapse into one edge, so
+the two do not share an identifier and tracing one to the other is a join on
+`(source, target, kind)`.
+
+**The payload union IS shared**, imported unchanged from the frozen `causal_edge` module. One
+taxonomy for prd.md §26's five categories, not a second and weaker one.
+
+**Address:** `CandidateEdge.address(source_event_id, target_event_id, payload, generator_id)`
+over `source | target | edge_type | generator_id | payload`. Two departures from
+`CausalEdge.address`, both deliberate:
+
+* **`generator_id` participates** because the candidate graph is a multigraph — two
+  generators reaching one pair by different reasoning are two proposals with two evidence
+  trails, and merging them would destroy the fact that two unrelated lines of reasoning
+  arrived at the same place, which is exactly what module 10 needs to see.
+* **The whole payload participates, not just its kind.** One generator legitimately reaches
+  one pair twice with two different claims — two `CONDITIONAL` claims under different
+  conditions, two `CONTRIBUTING` claims in different joint groups. Under a kind-only recipe
+  those collide (DEF-0006). Two proposals with an identical payload are genuinely one
+  hypothesis with two justifications and are merged into one candidate carrying both.
+
+**Construct with `CandidateEdge.between`**, which mirrors `CausalEdge.between` exactly: it
+takes the two `Event` objects because it is the only place both intervals are visible,
+computes and stamps `temporal_verdict` and `temporally_unverifiable`, and offers no `skip` or
+`force` argument. A `VIOLATION` raises `LawViolationError`.
+
+**The DEF-0002 boundary applies here identically and is restated rather than inherited.** The
+artifact stores identifiers, not intervals, so nothing inside it can recompute `verdict(...)`.
+An `UNDETERMINED` verdict rewritten to `CERTAIN` on the wire is accepted. Closing that means
+putting the intervals into the artifact — an ADR, not an edit.
+
+**Invariants:** `temporal_verdict` is never `VIOLATION`; `provenance_class` is never
+`OBSERVED`; `INFERRED` requires `CERTAIN` and not `temporally_unverifiable`; `evidence` is
+non-empty; `source_event_id != target_event_id`; `generator_id` non-empty; `run_id` present.
+In practice module 9 never emits `INFERRED` at all — promotion is a judgement and judgement is
+module 10's — but the invariant is enforced on the type so a deserialized edge cannot claim it.
 
 ### `RunKey`, `Run`, `OutputEnvelope` — `core/run.py`
 
@@ -578,7 +780,10 @@ validation failure. Ordinary contract breaches raise `ContractViolationError`.
 | Identifier determinism, including across a fresh interpreter | `tests/unit/core/test_identifier_determinism.py` |
 | Timestamp comparison under uncertainty | `tests/unit/core/test_temporal_comparison.py` |
 | Provenance algebra never increases certainty | `tests/unit/core/test_provenance_algebra.py` |
-| Aggregation bounds and weakest-provenance rule | `tests/unit/core/test_confidence_aggregation.py` |
+| Aggregation bounds, monotonicity, gate ceilings, and the weakest-provenance rule | `tests/unit/core/test_confidence_aggregation.py` |
+| Every scored edge carries all eight components, each traced to evidence | `tests/law/test_law_evidence_gates_every_edge.py` |
+| A missing component is emitted at zero, flagged, and counted — never omitted | `tests/unit/causal_engine/confidence_scorer/test_score.py` |
+| Base rates: a pattern present everywhere has lift 1.0 and scores zero | `tests/unit/causal_engine/confidence_scorer/test_base_rates.py` |
 | Serialization round-trip and byte stability | `tests/unit/core/test_serialization_round_trip.py` |
 | LAW-TIME enforced at construction *and* deserialization | `tests/law/test_law_time_is_enforced_at_construction.py` |
 | The measured limit of that enforcement on the wire (DEF-0002) | `tests/law/test_law_time_survives_the_wire.py` |

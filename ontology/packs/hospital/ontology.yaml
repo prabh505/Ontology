@@ -9,7 +9,7 @@
 # Because there is no dataset, every attribute is ASSUMED. That is the honest origin: an
 # ASSUMED attribute states that nothing was observed, which is exactly the situation here.
 
-pack_schema_version: "1.0.0"
+pack_schema_version: "1.2.0"
 pack_id: hospital
 ontology_version: "1.0.0"
 extends: _base

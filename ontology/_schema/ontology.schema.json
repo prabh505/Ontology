@@ -2,7 +2,7 @@
   "$defs": {
     "ActionabilitySpec": {
       "additionalProperties": false,
-      "description": "Whether an operator can act on an event type, and at what cost.\n\nRoot-cause ranking reads this (ADR-0008), which is why it is declared rather than\ninferred. `provenance_class` is pinned to `ASSUMED`: risk R-15 records that nothing in\nthe system can validate an actionability claim, and labelling it anything stronger\nwould hide that.",
+      "description": "Whether an operator can act on an event type, at what cost, and at what risk.\n\nRoot-cause ranking reads this (ADR-0008), which is why it is declared rather than\ninferred. `provenance_class` is pinned to `ASSUMED`: risk R-15 records that nothing in\nthe system can validate an actionability claim, and labelling it anything stronger\nwould hide that.\n\n`risk_class` arrives at pack schema 1.2.0 (ADR-0073) because prd.md §50 requires an\noperational risk on every recommendation and nothing in this repository declared one.\nIt is OPTIONAL where `cost_class` is mandatory, and the asymmetry is deliberate: an\nactionable type with no cost would rank as free, which is a wrong number, whereas an\nactionable type with no risk ranks nowhere on that objective and is reported as\n`NOT_DECLARED`. ADR-0049's rule in the direction that refuses -- absent means the\nobjective CANNOT RUN for this type, never that the risk is nil.",
       "properties": {
         "actionable": {
           "title": "Actionable",
@@ -24,6 +24,19 @@
         "provenance_class": {
           "$ref": "#/$defs/ProvenanceClass",
           "default": "ASSUMED"
+        },
+        "risk_class": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Risk Class"
         },
         "severity_class": {
           "pattern": "^[A-Z][A-Z0-9_]*$",
@@ -69,6 +82,36 @@
       "additionalProperties": false,
       "description": "One attribute of an entity type or event type, with its provenance of definition.\n\nExactly one of `source_column`, `derivation_basis`, `assumption` is present, selected\nby `origin`. The three are kept as separate fields rather than one free-text note so\nthat \"which columns does this pack actually consume\" is a query rather than a reading\nexercise.",
       "properties": {
+        "admissible_range": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Admissible Range"
+        },
+        "admissible_values": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Admissible Values",
+          "type": "array"
+        },
         "assumption": {
           "anyOf": [
             {
@@ -105,6 +148,11 @@
           },
           "title": "Enumeration Values",
           "type": "array"
+        },
+        "mutable": {
+          "default": false,
+          "title": "Mutable",
+          "type": "boolean"
         },
         "name": {
           "pattern": "^[a-z][a-z0-9_]*$",
@@ -182,7 +230,7 @@
     },
     "ClassSpec": {
       "additionalProperties": false,
-      "description": "One member of a pack-declared ordinal vocabulary (cost or severity).\n\n`rank` carries the sequence so a ranker can compare two members without reading their\nnames. Names are for humans; `rank` is for the engine.",
+      "description": "One member of a pack-declared ordinal vocabulary (cost, severity or risk).\n\n`rank` carries the sequence so a ranker can compare two members without reading their\nnames. Names are for humans; `rank` is for the engine.",
       "properties": {
         "description": {
           "minLength": 1,
@@ -968,6 +1016,14 @@
           "title": "Relationship Types",
           "type": "array"
         },
+        "risk_classes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Risk Classes",
+          "type": "array"
+        },
         "severity_classes": {
           "default": [],
           "items": {
@@ -1025,7 +1081,7 @@
       "type": "object"
     }
   },
-  "$id": "https://causalog.invalid/schema/domain-pack/1.0.0/ontology.schema.json",
+  "$id": "https://causalog.invalid/schema/domain-pack/1.2.0/ontology.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The declarative description of one domain (ADR-0026). Generated from causalog.ontology_runtime.dsl; edit the models, never this file.",
@@ -1137,6 +1193,14 @@
         }
       ],
       "default": null
+    },
+    "risk_classes": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ClassSpec"
+      },
+      "title": "Risk Classes",
+      "type": "array"
     },
     "severity_classes": {
       "default": [],

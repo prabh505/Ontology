@@ -253,7 +253,7 @@ blocks its module.
 | OQ | Default used | Blocks |
 |---|---|---|
 | OQ-005 | `ConfidenceVector` authoritative, scalar derived; event field named `extraction_confidence` | module 10 until ADR-0009 |
-| OQ-007 | V1 counterfactuals are a labelled plausibility simulation, not an effect estimate | module 13 until ADR-0011 |
+| ~~OQ-007~~ | V1 counterfactuals are a labelled plausibility simulation, not an effect estimate | **closed 2026-09-07 by ADR-0065** |
 | OQ-013 | Cost is ontology configuration on an ordinal band with `ASSUMED` provenance | module 14 |
 
 **Promoted to decisions on 2026-08-23** — no longer assumptions: OQ-002 → **ADR-0007**,
@@ -323,7 +323,7 @@ evidence is below.
 | Any module that *produces* these types | `core/` declares what the pipeline computes over; building a producer here would put ingestion logic in L0 and breach forbidden edge F1 | Module 3 (Entity Extractor) and module 4 (Event Generator) |
 | The §26-to-§47 graph projection | `CAUSES`/`AMPLIFIES`/`REDUCES` are a *graph* vocabulary; mapping the taxonomy onto them is the Temporal Graph Builder's job, and doing it in `core` would make L0 know about the projection | Module 8 |
 | Persistence of any kind | `core/` has no I/O by contract; the ports exist, the adapters do not | Module 1, wired by Orchestration (ADR-0014) |
-| A `SimulatedWorld` type | The `sim` prefix is reserved in `IdentifierPrefix`, but the shape depends on ADR-0011, which does not exist | Module 13, after ADR-0011 |
+| ~~A `SimulatedWorld` type~~ | ~~The `sim` prefix is reserved in `IdentifierPrefix`, but the shape depends on a decision that does not exist~~ | **Built 2026-09-07.** The decision is ADR-0065; the number this row named was reserved at the scaffold and never written |
 | Confidence *calibration* | There is no causal ground truth in this dataset to calibrate against; the weights are a stated judgement, not a fit | Labelled ground truth, if it ever exists |
 | A `CandidateEdge` distinct from `CausalEdge` | `CONTEXT.md` §6 listed both; one type with a provenance class and a temporal verdict says the same thing, and two would need a promotion path that could drop invariants | If module 9 finds a field only a pre-scoring edge needs |
 
@@ -2006,17 +2006,373 @@ explosion. Recorded as risk R-21.
   `CAUSES`. Owns the Neo4j projection build (ADR-0001).
 
 ## 09. Candidate Cause Generator
-- **Status:** not-started · **Phase:** P3 · **Contract:** `CandidateEdge` (draft)
+- **Status:** **built-unverified** · **Phase:** P3 · **Built:** 2026-09-02
+- **Contract:** `CandidateEdge`, `CandidateGraph`, `ConfoundingFlag`, `CandidateGraphReport`
+  (all draft) · **ADRs:** 0048, 0049, 0050, 0051
 - **Prerequisite:** OQ-002 resolved by ADR-0007, extended by ADR-0021 — no longer blocking.
-  This module owns the LAW-TIME gate, and enforces it by constructing every edge through
-  `CausalEdge.between`, which raises rather than returning an invalid edge.
+  This module owns the LAW-TIME gate and enforces it by constructing every candidate through
+  `CandidateEdge.between`, which raises rather than returning an invalid edge.
+- **Deviation from the plan, recorded:** the stub above named `CausalEdge.between` as the
+  construction path. It cannot be: `CausalEdge` requires a `ConfidenceVector` this module may
+  not assign. ADR-0048 adds `CandidateEdge` instead and moves `CausalEdge`'s registry
+  ownership to module 10.
+
+### What it does, and what it structurally cannot do
+Seven generators (prd.md §27's six sources; shared entity and shared identifier are separate
+because `EvidenceKind` distinguishes them and one identifier would make the per-generator
+report unable to say which produced a proposal). Each returns `Proposal` values and **cannot
+construct a candidate** — construction is `gate.py`'s, which is the single place LAW-TIME is
+evaluated. Asserted over the AST, not by convention:
+`tests/law/test_law_time_gates_every_candidate.py` parses every file in the package and fails
+if `CandidateEdge` is constructed anywhere but `gate.py`, if `.trigger` is read anywhere
+(ADR-0020), or if a `ConfidenceVector` is built anywhere.
+
+`CandidateEdge` has **no confidence field**. "Module 9 never scores" is a property of the
+type, not a rule.
+
+### Evidence — commands and their output
+
+```
+$ cd backend && pytest tests --ignore=tests/integration --ignore=tests/graph/test_neo4j_projection.py
+880 passed, 68 skipped in 35.81s
+```
+
+```
+$ pytest tests/unit/causal_engine tests/law/test_law_time_gates_every_candidate.py \
+         tests/determinism/test_candidate_graph_is_stable.py \
+         tests/graph/test_candidate_graph_invariants.py
+82 passed
+```
+
+Module 9's own tests: **60 unit** (each generator alone on hand-derived fixtures; the gate
+property-based over arbitrary interval pairs; confounder flagging on synthetic fork and
+chain; caps, merging and the reconciliation identity), **8 law**, **7 determinism**,
+**7 graph-invariant**. Suite 802 → 880.
+
+```
+$ make laws
+FIVE LAWS: byte-identical across CONTEXT.md §2 and CONVENTIONS.md §1.
+LAW-DOMAIN: clean across 141 file(s) in 9 package(s).
+LAW-EVIDENCE: clean across 147 file(s); confidence is a vector everywhere.
+LAYER BOUNDARIES: clean across 147 file(s).
+DEPENDENCY POLICY: clean; 14 pinned dependencies, all ADR-backed.
+GOVERNANCE CONSISTENCY: clean
+ADR-0026: clean across 39 file(s) in 5 package(s); every metric is declared, not computed.
+```
+
+`check_metrics_are_declared.py` is the one to read: module 9 is the first code in
+`causal_engine/`, and it stays clean **with no allowlist entry**, because every threshold it
+uses is declared in the rule pack (ADR-0049).
+
+```
+$ ruff check backend scripts && ruff format --check backend scripts
+All checks passed!  ·  291 files already formatted
+$ cd backend && mypy
+Success: no issues found in 147 source files
+```
+
+### Measured candidate graph — 150 rows of the reference dataset
+
+```
+$ python scripts/build_candidate_graph.py --rows 150
+[1/6] packs        ont:55b7f5c6adeeee2c map:a85a911e567f73c2 rul:83fa4858d3cc0a4a
+[2/6] pin          dataco@994b3c8d24049cc4+mapa85a911e567f73c2
+[3/6] clean layer  bounded to 150 rows
+[4/6] entities     636
+[4/6] events       1,224
+[5/6] timelines    733
+[5/6] rule firings 20,328 from 12 rule(s)
+[6/6] candidates   17,864
+```
+
+**Bounded, and labelled as bounded in the artifact itself (OQ-023).** Module 9 is not a
+streaming module and the full expansion does not fit in memory as models. Every number below
+measures 150 rows, not 180,519.
+
+| generator | status | proposed | merged | admitted | retained |
+|---|---|---:|---:|---:|---:|
+| `historical_frequency` | RAN | 35,422 | 5,325 | 30,097 | 4,370 |
+| `rule_based` | RAN | 20,325 | 0 | 20,325 | 2,297 |
+| `shared_entity` | RAN | 87,446 | 0 | 78,140 | 6,588 |
+| `shared_identifier` | **NOT_RUNNABLE** | 0 | 0 | 0 | 0 |
+| `statistical_association` | RAN | 27,101 | 4,447 | 22,654 | 4,126 |
+| `structural_path` | RAN | 0 | 0 | 0 | 0 |
+| `temporal_proximity` | RAN | 1,083 | 596 | 483 | 483 |
+
+Rejections: **9,310 temporal violations** (all from `shared_entity`, which proposes both
+directions and lets the gate decide, plus 4 from proximity), **133,835 truncated by cap**,
+0 self-edges, 0 constraint suppressions, 1 generator not runnable.
+
+**Temporal standing — the headline finding.** `UNDETERMINED` **2,587 (14.5%)**; temporally
+unverifiable **15,023 (84.1%)**; promotable to `INFERRED` **254 (1.4%)**. The two are never
+summed. **The dominant term is absent instants, not ambiguous ones** — a consequence of
+ADR-0029's twenty DERIVED event types, and a thing R-14 did not predict because the Data
+Adapter's 2.81% measured rows against one declared precedence pair, not candidates across
+twenty-one event types.
+
+Per effect: min 2, median 20, max 20 (the declared cap) over 1,224 effects; 657 effects were
+truncated, losing 133,835 candidates, every one recorded per generator.
+
+Confounding: 34,290 `POSSIBLE_MEDIATION` and 34,290 `POSSIBLE_COMMON_CAUSE`, **3.84 flags per
+candidate** — a density the report itself calls out as a property of a dense graph rather
+than a finding about particular claims.
+
+Report: `docs/reports/dataco/dataco@994b3c8d24049cc4+mapa85a911e567f73c2/candidate-graph.md`.
+
+### Two generators produced nothing, and both are honest
+- `structural_path` **RAN** and proposed 0, flagged `looks_degenerate`. It reads
+  `GraphFacts.relationships()`, which is module 7's output, and module 7 is not-started. It
+  reports zero over zero relationships rather than being absent from the report.
+- `shared_identifier` is **NOT_RUNNABLE**, which is deliberately not zero — see DEF-0007.
+
+### Failure modes, each with its test
+| Failure mode | Test |
+|---|---|
+| A `VIOLATION` pair is constructed | `test_gate.py::test_a_violation_is_never_constructed` (property-based) |
+| An `UNDETERMINED` pair is dropped to tidy the graph | `::test_an_undetermined_pair_is_retained_and_never_promotable` |
+| Unverifiable is collapsed into `UNDETERMINED` | `::test_unverifiable_is_a_third_state_distinct_from_undetermined` |
+| The gate promotes its own output to `INFERRED` | `::test_the_gate_never_assigns_inferred_provenance` |
+| A rejected pair is reintroduced through deserialization | `::test_candidate_edge_refuses_a_violation_on_the_deserialization_path_too` |
+| A constraint suppression is applied silently | `::test_a_constraint_prohibition_is_a_counted_rejection_not_a_silent_filter` |
+| A generator is reported as zero when it could not run | `test_caps_and_report.py::test_a_generator_that_could_not_run_is_never_reported_as_zero` |
+| A saturated or silent generator goes unnoticed | `::test_a_saturated_generator_is_flagged_as_degenerate`, `::test_a_generator_that_ran_and_proposed_nothing_is_flagged_as_degenerate` |
+| The cap becomes a covert ranking | `::test_round_robin_starves_no_generator` |
+| A candidate is silently dropped by the cap | `::test_every_truncation_is_recorded_per_generator_and_reconciles` |
+| The graph's totals disagree with themselves | `::test_a_graph_whose_totals_disagree_raises_rather_than_being_published` |
+| Two runs mix in one graph | `::test_a_graph_mixing_two_runs_is_refused` |
+| Confounder flagging removes or reweights an edge | `test_confounding.py::test_flagging_removes_nothing_and_mutates_nothing` |
+| A fork or chain goes unflagged | `::test_a_fork_is_flagged_as_a_possible_common_cause`, `::test_a_chain_is_flagged_as_possible_mediation` |
+| Parallel edges are merged, losing a generator's evidence | `test_candidate_graph_invariants.py::test_parallel_edges_are_retained_separately_with_distinct_evidence` |
+| Output varies between runs or with input sequence | `test_candidate_graph_is_stable.py` (7 tests) |
+
+### What this run did NOT check
+- **That any candidate is causally correct.** No test asserts it and none can — there is no
+  causal ground truth in this dataset (`CONVENTIONS.md` §14).
+- **That the declared windows are the right widths.** None is calibrated against measured
+  inter-arrival times. Risk R-16, and every rationale says so.
+- **The whole dataset.** 150 rows of 180,519. OQ-023.
+- **Persistence.** Nothing is written to PostgreSQL: forbidden edge F4 admits only
+  `orchestration`, which does not exist (OQ-014). The graph lives and dies inside the run.
+- **The determinism GATE.** `scripts/check_determinism.py` still exits 2 NOT-YET-RUNNABLE for
+  want of a pipeline entry point. This module ships its own determinism tests, which is not
+  the same thing and is not claimed to be.
+
 
 ## 10. Confidence Scorer
-- **Status:** not-started · **Phase:** P3 · **Contract:** `ConfidenceVector`, `EvidenceRecord`,
-  `EvidenceItem` (**frozen**, ADR-0025); `CausalGraph` (draft)
-- **Prerequisite:** OQ-005 resolved by ADR-0009 — no longer blocking. This module owns the
-  LAW-EVIDENCE gate and is the only module permitted to write `CAUSES`. It consumes the
-  aggregator registry rather than defining its own rollup.
+- **Status:** **built-unverified** (2026-09-03) · **Phase:** P3 · **Contract:**
+  `ConfidenceVector`, `ConfidenceComponent`, `EvidenceRecord`, `EvidenceItem` (**frozen**,
+  ADR-0025); `CausalGraph`, `ScoredEdge`, `ComponentExplanation` (draft, ADR-0052)
+- **Owns the LAW-EVIDENCE gate.** The first and only module that constructs a `CausalEdge`,
+  and the only one permitted to write `CAUSES`. It consumes the aggregator registry rather
+  than defining its own rollup — and extended it rather than revising it.
+- **ADRs:** ADR-0052 (the aggregation strategy), ADR-0053 (the config split).
+  `confidence_schema_version` 1.0.0 → 2.0.0; `rule_pack_schema_version` 1.1.0 → 1.2.0;
+  `docs/contracts.md` 1.5.0 → 1.6.0.
+
+### What it does
+prd.md §49 — "confidence should never be represented by a single unexplained number" — made
+structural rather than aspirational.
+
+- **Eight components**, each independently computed and defensible: the six of §49, plus
+  `evidence_diversity` and `contradiction_freedom`. Each returns a value, a plain-language
+  sentence, its caveats, and the arithmetic that produced it.
+- **Two of the eight are gates, not addends.** `temporal_support` and
+  `contradiction_freedom` cap the scalar by `min` rather than contributing to a sum other
+  evidence can outvote. Monotonicity survives and is property-tested.
+- **Base rates, not raw counts.** `base_rates.py` builds one instance-level 2×2 contingency
+  table per sequenced type pair; the two lift-reading components score **lift**, so a
+  pattern present in every instance has lift 1.0 and scores zero however large its count.
+  Small samples are discounted by a declared shrinkage term, never rounded up.
+- **No component is ever skipped.** A component whose data is absent is emitted at zero,
+  marked `missing`, and counted. `ComponentScorer.score` has no `None` return.
+- **`INSUFFICIENT_EVIDENCE` is a distinct outcome**, not a low band: it carries a full
+  vector, gets no band, and is never promoted.
+- **Bands live in the rule pack**, thresholds and plain-language wording both.
+
+### Evidence
+- 50 unit tests (`tests/unit/causal_engine/confidence_scorer/`), 7 law
+  (`tests/law/test_law_evidence_gates_every_edge.py`), 3 determinism
+  (`tests/determinism/test_confidence_is_stable.py`), plus 10 added to
+  `tests/unit/core/test_confidence_aggregation.py` for the gated strategy. Suite 880 → 1,050.
+- `make laws` clean: LAW-EVIDENCE, LAW-DOMAIN, layer boundaries, metric declaration.
+  `ruff` and `mypy --strict` clean.
+- Committed artifact: `docs/reports/dataco/<dataset_version>/confidence.{md,json}`,
+  regenerable by `scripts/build_causal_graph.py --rows 150`.
+
+### What the first measured run says
+17,864 candidates fused to 9,492 scored edges over the same 150-row slice module 9 used.
+
+| finding | value |
+|---|---|
+| edges scoring above 0.40 | **0** |
+| promoted to `INFERRED` | **0** |
+| every scored edge's band | `WEAK` (7,535) |
+| `INSUFFICIENT_EVIDENCE` | 1,957 (20.6%) |
+| temporal gate binding | 4,636 (48.8%) |
+| `graph_connectivity` missing | 9,492 (100%) |
+| `rule_support` missing | 7,195 (75.8%) |
+| edges tied at the maximum | 310 |
+
+The top of the distribution is a **plateau**, not a ranking: 310 edges sit at exactly
+0.400000 because the temporal ceiling put them there, so the report says so before printing
+the ten it prints.
+
+### Three defects the artifacts and tests found, fixed and recorded
+1. **A floor that could not fire.** DataCo declared `minimum_scored_components: 3`; three
+   components are properties of the claim's own evidence bundle and are always measurable,
+   so no edge could fall below three. Corrected to 5 against the observed distribution, and
+   the report now states when a floor is unreachable.
+2. **A hard cap a rounding could step over.** `ceiling_at` returned an unquantized value, so
+   on 3.8% of vectors the stored scalar sat 5.5e-17 above its own ceiling. Caught by a
+   property test; fixed by quantizing the ceiling.
+3. **A caveat its own number contradicted.** `statistical_support` discounted on the
+   instance total rather than on the cell the ratio rests on, so the small-sample term was
+   0.973 for every pair while the caveat correctly announced "SMALL SAMPLE". Both
+   lift-reading components now discount on `both`, and are told apart by how they weight the
+   sample and effect factors — geometrically, so a zero on either is a zero overall.
+
+### What it does NOT establish
+**The scores are internally consistent and are not calibrated** (OQ-024). No labelled causal
+ground truth exists in this repository, so no reliability curve can be drawn and no error
+rate quoted; the component weights are a stated editorial judgement, not a measurement. The
+report says this before any number, as fixed text that cannot be softened per run.
+
+## — Causal Graph Builder (not a §36 module; owns prd.md §25, §26, §31)
+- **Status:** **built-unverified** (2026-09-04) · **Phase:** P3 · **Contract:**
+  `PromotedGraph`, `PromotedEdge`, `DemotionRecord`, `JointCauseGroup`, `FeedbackLoop`,
+  `GraphQualityReport` (all draft, ADR-0054)
+- **Not one of the sixteen.** prd.md §36 names no owner for §25 (the causal graph), §26
+  (the edge taxonomy) or §31 (feedback loops). Landed as the ontology layer and the rule
+  engine were, at `causal_engine/causal_graph_builder` (L6). **OQ-025** records the gap and
+  proposes amending §36 rather than renumbering modules 11–16.
+- **ADRs:** ADR-0054 (placement + the promotion move), ADR-0055 (`graph_construction` at
+  `rule_pack_schema_version` 1.3.0), ADR-0056 (`core.measurement`, magnitude views).
+  `rule_pack_schema_version` 1.2.0 → 1.3.0; `docs/contracts.md` 1.6.0 → 1.7.0.
+
+### What it does
+Turns module 10's scored claims into the engine's **stated view** — and, in the same
+artifact and of equal standing, the record of everything it declined to state.
+
+- **Promotion is one decision with one home.** `ProvenanceClass.INFERRED` is assigned in
+  `policy.py` alone, across the whole of `causal_engine`, under a **per-edge-kind** threshold
+  declared in the rule pack. A `DIRECT` claim and an `AMPLIFYING` claim are not the same
+  assertion, and one global number would force one answer and hide that a choice was made.
+- **LAW-TIME re-verified twice at promotion.** Explicitly against the two `Event` intervals —
+  the check a stored `CausalEdge` cannot perform on itself (DEF-0002) — and again through
+  `revise`, which re-runs the frozen type's `INFERRED ⇒ CERTAIN ∧ ¬unverifiable` invariant.
+- **Nothing is dropped.** `promoted + demoted == considered` is checked at construction. A
+  `DemotionRecord` carries a closed-set reason, a sentence, and the full lineage including
+  the **whole `ConfidenceVector`** — a ledger entry saying "this scored 0.24" and nothing
+  else is the unexplained number prd.md §49 forbids, and a demoted claim has no edge beside
+  it to look the components up on.
+- **Joint causes are promoted all-or-nothing.** Promoting two of three contributors would
+  tell module 13's counterfactual surgery and module 14's ranking that removing either one
+  prevents the outcome — the opposite of what a joint cause asserts.
+- **Propagation weight is an attribution estimate, and says so** in fixed text that is a
+  property rather than a field, so a revision cannot soften it. Magnitudes come from the
+  ontology's declared `measurement_definitions`; modifiers (`AMPLIFYING`, `INHIBITING`) are
+  excluded from the normalization basis because a modifier is not a contributor.
+
+### The design decision most likely to be re-derived badly
+**Feedback loops are detected over the event-TYPE projection, never over event instances.**
+At the instance level a `CERTAIN` verdict is a strict precedence relation, strict precedence
+admits no cycle, so an all-`CERTAIN` circuit over instances is *arithmetically impossible* —
+a detector running there could only ever find artifacts, and every "loop" it reported would
+be a restatement of the source's timestamp granularity. prd.md §31's loop closes across
+process instances. Pinned by
+`tests/graph/test_feedback_loops.py::test_no_instance_level_cycle_is_all_certain`.
+
+Four classifications, because two would overclaim: `GENUINE`, `TEMPORAL_ARTIFACT`,
+`WITHIN_INSTANCE`, `UNPROMOTED`. Classification is engine code and no pack may override it —
+if a pack could decide it, "the engine detected a reinforcing loop" would mean two different
+things in two packs and would stop being a finding.
+
+### Evidence
+- **106 tests**: 50 unit (`tests/unit/causal_engine/causal_graph_builder/`, including 4
+  hypothesis property tests), 13 graph-invariant (`tests/graph/test_feedback_loops.py`), 4
+  determinism (`tests/determinism/test_causal_graph_is_stable.py`), and 39 law
+  (`tests/law/test_law_time_gates_every_promotion.py` — parametrized per source file, so the
+  structural assertions grow with the package rather than being written once). Suite
+  1,050 → 1,156.
+- The planted pair is the headline: **two graphs of identical topology**, same types, same
+  edges, same generators, same instances — differing only in the width of the occurrence
+  intervals — asserted to classify as `GENUINE` and `TEMPORAL_ARTIFACT` respectively.
+- `make laws` clean, including LAW-DOMAIN, LAW-EVIDENCE, layer boundaries and the
+  metric-declaration lint. `ruff` and `mypy --strict` clean.
+- Committed artifact: `docs/reports/dataco/<dataset_version>/causal-graph.{md,json}` plus
+  `causal-graph-edges.json`, regenerable by `scripts/build_causal_graph.py --rows 150`.
+
+### Two lints caught real defects during the build, and both were fixed rather than allowlisted
+1. **LAW-EVIDENCE.** `EdgeLineage` carried `confidence_scalar: float` — a bare float, in the
+   one artifact where it is worst: a reader asking why a claim was *rejected* needs the
+   components, and a demoted claim has no `CausalEdge` beside it. Replaced with the whole
+   vector. The `.lawevidence-allowlist` stayed empty.
+2. **LAW-DOMAIN.** 22 violations, all in prose: the module docstrings quoted prd.md §31's
+   logistics example verbatim and used "ordering"/"ordered"/"order" throughout. Rewritten to
+   "precedence"/"directed"/"sequence" and the example replaced by an abstract paraphrase.
+   The `.lawdomain-allowlist` stayed empty. The lint was right: quoting the PRD's domain
+   example inside `causal_engine` is exactly what LAW-DOMAIN forbids.
+
+### What the first measured run says
+Over the same 150-row slice modules 9 and 10 used, at `run:244e3cf2d3f4300d`.
+
+| finding | value |
+|---|---|
+| claims considered | 9,492 |
+| **promoted to `INFERRED`** | **0** |
+| `TEMPORALLY_UNVERIFIABLE` | 6,219 (65.5%) |
+| `INSUFFICIENT_EVIDENCE` | 1,957 (20.6%) |
+| `TEMPORAL_NOT_CERTAIN` | 1,308 (13.8%) |
+| `BELOW_KIND_THRESHOLD` | **8** |
+| orphan effect types | 18 of 18 (100%) |
+| circuits found | 200 (enumeration cap) |
+| **genuine feedback loops** | **0** |
+| temporal artifacts | 200 |
+
+**The binding constraint is time, not the threshold.** Only eight claims in 9,492 ever
+reached a band comparison at all; the rest were stopped by LAW-TIME or by insufficient
+measurement before a threshold was consulted. Lowering the promotion band would therefore
+change almost nothing, which is worth stating because it is the first thing anyone will
+propose on seeing an empty graph.
+
+### R-22, found by hand rather than predicted
+Verifying one chain against the raw rows produced a sharper statement than R-14's "day
+granularity", and it is the actual reason the graph is empty.
+
+`causalog.core.temporal.verdict` returns `CERTAIN` only when the intervals are strictly
+separated **and** neither endpoint's timestamp provenance is `INFERRED` (ADR-0021). For
+order `41304` (raw rows 141 and 145, `order date` `8/25/2016 22:16`, `shipping date`
+`8/30/2016 22:16`, real 5 days against scheduled 2, `Delivery Status = Late delivery`):
+
+```
+CAUSE   SHIPMENT_DISPATCHED  2018-02-03 00:00:00+00:00 -> 2018-02-03 23:59:59.999999+00:00
+        precision = DAY   interval provenance = ASSUMED
+EFFECT  SHIPMENT_DELIVERED   2018-02-06 00:00:00+00:00 -> 2018-02-06 23:59:59.999999+00:00
+        precision = DAY   interval provenance = INFERRED
+        source: emission[SHIPMENT_DELIVERED].occurred_at=OFFSET_FROM(
+                ORDER.dispatched_at + ORDER.actual_shipping_days days)
+
+  strictly_before(cause, effect) = True        <- the bounds ARE cleanly separated
+  is_unverifiable(cause)         = False
+  is_unverifiable(effect)        = False
+  verdict(cause, effect)         = UNDETERMINED
+```
+
+Three whole days apart, `strictly_before` is `True`, and the verdict is still not `CERTAIN`
+— because DataCo records no arrival instant, so the delivery timestamp is arithmetic over
+two source columns. **Not one of the 1,224 events in the slice carries an `OBSERVED`
+timestamp** (789 `ASSUMED`, 435 `INFERRED`). Every pair whose effect is a derived occurrence
+is permanently barred from promotion, and more rows cannot change it.
+
+This is ADR-0021 working exactly as designed, not a defect. What had never been measured is
+the size of the consequence, because nothing had ever tried to promote.
+
+### What it does NOT establish
+The graph asserts what it contains and **nothing about what it omits**. A cause absent from
+it was not ruled out — it was never proposed, never measured, or never cleared. That sentence
+is the report's first section as fixed text. And the scores underneath remain uncalibrated
+(OQ-024): promotion is a threshold applied to an uncalibrated number, so it inherits every
+caveat module 10 states and adds no evidence of its own.
 
 ## 11. Root Cause Analyzer
 - **Status:** not-started · **Phase:** P3 · **Contract:** `RootCauseRanking` (draft)
@@ -2029,9 +2385,11 @@ explosion. Recorded as risk R-21.
   requirement, not a bug (prd.md §31).
 
 ## 13. Counterfactual Simulator
-- **Status:** not-started · **Phase:** P4 · **Contract:** `SimulatedWorld` (draft)
-- **Prerequisite:** OQ-007 resolved by ADR. Never writes back to history. Output is a
-  plausibility simulation, labeled as such.
+- **Status:** **built-unverified** · **Phase:** P4 · **Contract:** `SimulatedWorld` (draft)
+- **Prerequisite met 2026-09-07:** OQ-007 closed by **ADR-0065**. (The prerequisite named a
+  reserved ADR number that was never written; see §00j.) Never writes back to history. Output
+  is a plausibility simulation, labeled as such.
+- **Built:** ADR-0065 through ADR-0072. Full record in §00j.
 
 ## 14. Intervention Optimizer
 - **Status:** not-started · **Phase:** P4 · **Contract:** `Intervention` (draft)
@@ -2048,3 +2406,964 @@ explosion. Recorded as risk R-21.
 - **Scope reminder:** provenance classes must survive serialization and be visually
   distinct downstream (LAW-PROVENANCE). Every response carries the output envelope
   (`CONVENTIONS.md` §11).
+
+---
+
+## 09b/10b. Derived precedence reaches the scorer; rejections keep their effect (2026-09-05)
+
+**Status: `built-unverified` for both changes.** Two audit findings closed, both of them
+gaps in *plumbing* rather than in reasoning — in each case the measurement already existed
+and was discarded before anything could act on it. ADR-0057 and ADR-0058.
+
+### What the audit found
+
+**Finding 1 — LAW-TIME had no discriminating power on the one edge DataCo admits.**
+Measured against `datasets/raw/DataCoSupplyChainDataset.csv` with the real `verdict()`:
+
+```
+shipping date == order date + Days for shipping (real), to the minute:
+  19,066 of the first 20,000 rows exactly; the other 934 differ by exactly +/-43200s
+  (a twelve-hour AM/PM defect in the source, not a miss). Effectively 100%.
+
+Verdict matrix, 5,000 real rows, all five placeable event types:
+  cause       effect        CERTAIN  UNDETERMINED  VIOLATION
+  PLACED      DISPATCHED       4947            53          0
+  everything else                0   (all UNDETERMINED or VIOLATION)
+```
+
+Fourteen of nineteen event types are `policy: UNKNOWN`; three of the five placed are
+`INFERRED` and barred from `CERTAIN` by ADR-0021. So exactly one pair in the pack can reach
+`CERTAIN`, and its precedence is the arithmetic above. Module 1 already measured this
+(`SHIP_INSTANT_IS_DERIVED`, 170,782 / 180,519 = 94.61%) and the result stopped at
+`DataQualityReport.derivations`, which nothing read.
+
+**Finding 2 — "what was rejected for this effect, and why?" had no instance-level answer.**
+`GateOutcome` set `candidate` to None on rejection and the candidate was where the event ids
+lived, so refusing a proposal destroyed the only record of which effect it was refused for.
+
+### Built
+- `core/precedence.py` — `temporal_binding_source`, `DerivedPrecedence`,
+  `DerivedPrecedenceIndex`. At L0 so `causal_engine` never imports `ingestion`.
+- `ingestion/data_adapter/precedence.py` — the projection, with three refusals
+  (`evaluated > 0`, a day count present, agreement at or above `DERIVATION_CONFIRMED_RATE`).
+- `confidence_scoring.derived_precedence_temporal_support` in both packs; `temporal_support`
+  caps at `min(tightness, declared)` with provenance `ASSUMED`, and is NOT SCORABLE when a
+  derivation is confirmed and the knob is absent.
+- `--data-quality-report` on `build_causal_graph.py`: absent is a reported GAP, stale is a
+  refusal (exit 1).
+- `GateOutcome.cause_event_id` / `.effect_event_id`; `RejectedProposal`;
+  `apply_per_effect_cap` returns its dropped edges; `CandidateGraph.rejections` (bounded),
+  `.rejection_total`, `.rejections_per_effect` (complete), `.rejections_for_effect`.
+- `PromotedGraph.demotions_for_effect` / `.demotions_per_effect`.
+
+### Deliberately NOT built
+| Omission | Why | Revisit when |
+|---|---|---|
+| Instance-level records for `GENERATOR_NOT_RUNNABLE` | There is no proposal behind it and therefore no effect to name. `CandidateGraph` raises on one, so the limit is enforced rather than documented. Coverage is four of five reasons and the code says four | Never — this is correct |
+| A complete (unbounded) rejection set | 143,145 rejections against 17,864 retained on a 150-row slice. Bounded at `SAMPLED_REJECTIONS = 500`, with complete per-effect COUNTS beside it | A caller demonstrates a need the counts cannot serve |
+| Instance-weighted orphan share | A separate audit finding: `orphan_effect_share` divides by event TYPES, not events. Out of scope here | Deliberately left; still open |
+| Re-deriving the derivation inside the causal engine | It is module 1's measurement. Module 10 reads it or reports that it was not supplied | Never — this is the point of ADR-0057 |
+
+### Known limitations
+| # | Limitation | Impact | Tracked as |
+|---|---|---|---|
+| 1 | `rejections_for_effect` reads from the bounded sample; an empty result does not prove nothing was refused | A caller could misread absence. `rejections_per_effect` is the authority and the docstring says so | ADR-0058 consequences |
+| 2 | `derived_precedence_temporal_support` is a COMPONENT value that reads like a scalar one | DataCo's 0.10 caps the scalar near 0.33, not at 0.10. Both packs carry a comment stating the mapping | ADR-0057 consequences |
+| 3 | A pack that omits the new knob collapses affected edges to `INSUFFICIENT_EVIDENCE` | Correct NOT RUNNABLE behaviour, but severe. Pinned by a test so it is deliberate | ADR-0057 consequences |
+| 4 | `apply_per_effect_cap` is exported and its signature changed | A two-tuple unpack now raises. One production and one test caller, both updated | ADR-0058 consequences |
+
+### Failure modes and their tests
+| Failure mode | Test | Status |
+|---|---|---|
+| An arithmetic precedence scored as an observed one | `test_a_derived_precedence_is_capped_at_the_declared_value` | pass |
+| A cap that REWARDS a manufactured precedence | `test_the_cap_never_raises_a_score_it_should_lower` | pass |
+| The measurement applied backwards | `test_the_derivation_is_matched_only_in_the_direction_it_was_measured` | pass |
+| Guessing a value the pack did not declare | `test_a_confirmed_derivation_with_no_declared_cap_is_not_scorable` | pass |
+| An unaudited run reading as a clean one | `test_an_unaudited_run_scores_tightness_but_says_it_was_not_audited` | pass |
+| "Audited, nothing found" confused with "not audited" | `test_an_audited_run_that_confirmed_nothing_carries_no_absence_caveat` | pass |
+| Engine code parsing a source locator | `test_lookup_is_string_equality_and_never_a_partial_match` | pass |
+| `evaluated == 0` read as "confirmed false" | `test_a_check_with_no_evaluable_rows_is_refused_rather_than_read_as_disconfirmed` | pass |
+| A rejection losing its effect | `test_a_refusal_names_the_effect_it_was_refused_for` | pass |
+| Per-effect counts taken from the sample | `test_the_per_effect_counts_are_complete_even_where_the_sample_is_not` | pass |
+| An invented instance for a generator that never ran | `test_a_rejection_that_names_no_proposal_is_refused` | pass |
+| A uniqueness check raising on legitimate data | `test_two_refusals_of_one_pair_by_one_generator_are_both_retained` | pass |
+
+### Validation evidence (Definition of Done)
+
+Full suite:
+
+```
+1083 passed, 80 skipped in 146.44s (0:02:26)
+```
+
+`mypy --strict` and `ruff` over the distribution:
+
+```
+Success: no issues found in 178 source files
+All checks passed!
+```
+
+Law and boundary gates:
+
+```
+LAW-DOMAIN: clean across 173 file(s) in 9 package(s).
+LAYER BOUNDARIES: clean across 178 file(s).
+LAW-EVIDENCE: clean across 177 file(s); confidence is a vector everywhere.
+GOVERNANCE CONSISTENCY: clean; 10 question(s) closed by an existing ADR, 15 still open.
+self-test passed: 8 rule-pack violation shape(s) rejected, 2 legitimate pack(s) accepted.
+```
+
+End to end against the real dataset — the run that answers the audit:
+
+```
+[6/9] candidates         17,864
+[7/9] derivation audit   1 confirmed: SHIP_INSTANT_IS_DERIVED
+[8/9] scored edges       9,492 (7,535 scored, 1,957 insufficient, 0 promoted)
+[9/9] causal graph       0 promoted, 9,492 rejected; 200 circuit(s) (0 genuine)
+```
+
+The confidence report's new section, and the candidate report's:
+
+```
+Audited. **1 declared derivation check(s) were confirmed**, and 8 claim(s) had
+`temporal_support` capped as a result.
+
+**143,145 claim(s) were refused across 955 effect event(s)**, worst first.
+915 further effect(s) are not printed here, accounting for 126,007 more refusal(s).
+The counts above are complete; only this rendering is bounded.
+```
+
+The 143,145 matches the audit's independent count exactly. The GAP and refusal paths were
+exercised directly:
+
+```
+[7/9] derivation audit   GAP; no report at /nonexistent/dq.json.        (exit 0)
+[7/9] derivation audit   REFUSED ... reports dataset version '...map7acd9e...',
+      and this run is '...mapa85a9...'                                  (exit 1)
+```
+
+### Run identity moved, as ADR-0013 requires
+
+`rule_pack_version` 1.3.0 -> 1.4.0 (hospital 1.2.0 -> 1.3.0), so `run_id` moved and every
+content-addressed inferred artifact re-dated. R-19's fourth firing, expected and recorded:
+
+```
+rule_pack_hash   rul:4115780e4b4b45ec  ->  rul:d93351dc49f8e183
+run_id           run:244e3cf2d3f4300d  ->  run:090c036e338fa4c9
+```
+
+`dataset_version` is unaffected, so no re-import was needed. `rule-coverage`,
+`candidate-graph`, `confidence`, `causal-graph` and `causal-graph-edges` were all
+regenerated in this commit.
+
+**Noted while regenerating:** `docs/reports/dataco/rule-coverage.json` was committed at
+`rule_pack_version` 1.0.0 / `rul:f4aeace1280015c4` — stale since ADR-0044, three pack
+versions behind, and nothing had caught it. It is current now, but the staleness was
+pre-existing and is worth a check of its own rather than a note.
+
+### Performance note
+
+`build_candidate_graph.py` defaults to `--rows 20000` while the committed report was built
+at 150; at the default it does not finish in twenty minutes, and that is pre-existing rather
+than introduced here. Two performance defects WERE introduced and fixed before the reports
+were regenerated, both found by running the real script rather than the tests:
+
+1. `CandidateGraph._check_arithmetic` scanned `rejections_per_effect x truncations`, which
+   is quadratic in the candidate graph and runs on every construction. Now indexed.
+2. `generate.py` built a `RejectedProposal` for every rejection before sampling — millions
+   of models constructed and 500 kept, which is the cost the bound exists to avoid rather
+   than one it removes. Now a bounded heap over plain tuples: O(n log 500) time, O(500)
+   space, and the models are constructed only for the sample.
+
+---
+
+## 00i. Modules 11 and 12, and the structural pattern miner (2026-09-06)
+
+**Status:** all three `built-unverified`. ADR-0059 through ADR-0064.
+
+### What was built
+
+| Package | Layer | Files | Role |
+|---|---|---|---|
+| `causal_engine/propagation_analyzer` | L6 | 8 | module 12 — prd.md §30's seven measures, none combined |
+| `causal_engine/root_cause_analyzer` | L6 | 7 | module 11 — ADR-0008's four labelled views, never blended |
+| `causal_engine/pattern_miner` | L6 | 3 | prd.md §10's Executive Leadership user; **not** one of the sixteen |
+| `core/composition.py` · `core/attribution.py` · `core/ranking.py` | L0 | 3 | the arithmetic the metric lint refuses inside a reasoning package |
+
+### Gates
+
+```
+$ backend/.venv/bin/ruff check backend scripts
+All checks passed!
+
+$ cd backend && ../backend/.venv/bin/mypy
+Success: no issues found in 198 source files
+
+$ make laws
+LAW COPIES: clean.
+LAW-DOMAIN: clean across 194 file(s) in 9 package(s).
+LAW-EVIDENCE: clean across 198 file(s); confidence is a vector everywhere.
+LAYER BOUNDARIES: clean across 198 file(s).
+ADR-0026: clean across 84 file(s) in 5 package(s); every metric is declared, not computed.
+GOVERNANCE CONSISTENCY: clean; 10 question(s) closed by an existing ADR, 18 still open.
+ONTOLOGY SCHEMA: ontology/_schema/ontology.schema.json matches the DSL models.
+```
+
+**Both allowlists are still empty.** `.lawdomain-allowlist` and `.lawmetric-allowlist` gained
+no entry, as modules 9 and 10 managed before them. Two things that cost work to achieve and are
+worth recording because a later session will be tempted to reach for them:
+
+- **`order`, `ordering` and `ordered` are LAW-DOMAIN violations** and had to be reworded to
+  `sequence`/`sequencing`/`precedence` throughout, including in prose. The lint also refused
+  prd.md §29's storm example quoted verbatim, because the example names a customer and a
+  dispatch. It is paraphrased structurally in three places, with a note saying so — the ruling
+  turns on the SHAPE, not on the vocabulary.
+- **`confidence: float` is a LAW-EVIDENCE violation** and fired ten times on the first pass.
+  Renamed to `link_scalar`, `chain_scalar`, `composed_histogram`, `distinct_composed_values`
+  and `minimum_chain_scalar`. The lint is right: a bare float called `confidence` is the
+  unexplained number prd.md §49 forbids, and what these carry is a DERIVED scalar whose
+  components live on the `PathConfidence` that produced it. `core/ranking.py` carries a comment
+  saying so, because the next author will otherwise "fix" the name back.
+
+### Tests — 104 new, plus one benchmark
+
+```
+$ cd backend && ./.venv/bin/python -m pytest <each file> --no-cov
+tests/unit/causal_engine/propagation_analyzer     10 passed
+tests/unit/causal_engine/root_cause_analyzer       8 passed
+tests/unit/causal_engine/pattern_miner             8 passed
+tests/unit/core/test_composition.py               11 passed   (hypothesis, mark: property)
+tests/graph/test_propagation_invariants.py        11 passed
+tests/graph/test_impact_is_not_double_counted.py   6 passed
+tests/law/test_ranking_never_collapses.py         45 passed   (parametrized per source file)
+tests/determinism/test_root_cause_is_stable.py     5 passed
+```
+
+The law file is parametrized over every source file in all three packages, so its assertions
+grow with the packages — the technique `test_law_time_gates_every_promotion.py` established.
+Every file also carries an emptiness guard, because a check that cannot run must never read as
+a check that passed (DEF-0001 / OQ-014).
+
+**Ground truth by construction, not by claim.** `CONVENTIONS.md` §14 forbids asserting a causal
+conclusion is correct and nothing here does. `fixtures/propagation.py` plants prd.md §29's shape
+in domain-neutral vocabulary — a head that is declared unactionable, a later node that is
+actionable, and the magnitude hanging off a third node that is neither — so "where did this
+start?", "what is biggest?" and "what should we change?" have three different answers **because
+the fixture built them that way**. That is a structural assertion about output shape. The shape
+is not contrived: the DataCo pack declares exactly it, with `SHIPMENT_DISPATCHED` actionable and
+`SHIPMENT_DELIVERED`, which carries the measured variance, not.
+
+**A test found a real defect while it was being written.** The first draft of
+`propagation_analyzer/graph.py` restated the Causal Graph Builder's attribution notice "so it is
+fixed here too", and the two copies had already drifted by the time the test comparing them ran.
+A reader would have seen a softer caveat depending on which report they opened. Fixed by
+importing the constant rather than by aligning the copies, and the test now asserts **identity**
+rather than equality — equality would pass again the moment somebody reintroduced a duplicate
+that happened to match on the day they wrote it.
+
+### The prd.md §55 root-cause budget is measured for the first time
+
+`make bench` has printed the §55 targets since P0 and measured none of them. It now runs a real
+benchmark for the root-cause one.
+
+```
+$ cd backend && ../backend/.venv/bin/pytest tests/integration/test_root_cause_budget.py -q -s --no-cov
+
+  prd.md §55 root cause query
+    events in graph               1,224
+    links in graph                9,756
+    candidates considered            100
+    recommended                       50
+
+    ROOT CAUSE QUERY (budgeted)
+      elapsed                     0.518s   budget 3s
+
+    PROPAGATION ALONE (module 12, inside the above)
+      elapsed                     0.002s
+      consequences reached           48
+      depth / breadth                 6 / 8
+```
+
+**What it does not measure, printed beside the number rather than in a footnote:** the graph is
+built at the scale of the committed bounded run, which is 150 rows of 180,519 — three orders of
+magnitude below the reference dataset (OQ-023). A query over the dataset is not measured and
+this figure must not be read as though it were.
+
+The benchmark also refuses to pass on having no work to do: an earlier version strided by a
+fixed width, every ancestor of the final node then shared that node's index parity, and with
+actionability set on even indices **not one candidate was actionable** — so the ranking path
+went unmeasured while the test went green. Fixed, and the fixture's docstring records why.
+
+`make laws` also lost the `check_metrics_are_declared.py` exit-2 tolerance, exactly as that
+guard's own comment instructed: it existed "while every reasoning package is scaffold", and the
+scan now covers 84 files across five packages. A tolerated exit code outlives its reason
+silently, so it is removed in the commit that made it unnecessary.
+
+### The whole suite
+
+```
+$ cd backend && ./.venv/bin/python -m pytest --no-cov \
+    tests/unit/causal_engine/{propagation_analyzer,root_cause_analyzer,pattern_miner} \
+    tests/unit/core/test_composition.py \
+    tests/graph/test_propagation_invariants.py \
+    tests/graph/test_impact_is_not_double_counted.py \
+    tests/law/test_ranking_never_collapses.py \
+    tests/determinism/test_root_cause_is_stable.py
+104 passed in 1.19s
+```
+
+**CORRECTION, on the record rather than overwritten (DEF-0004).** An earlier revision of this
+section claimed "1,286 tests collected, 0 failed, 10 skipped (exit 0)" for the whole suite. That
+claim was false and the way it was produced is the defect worth recording, because it is the
+OQ-004 / OQ-008 class again — prose claiming more verification than existed.
+
+The run was invoked as `pytest -q --no-cov -m "not slow" | tail -6`. Two things followed from
+the pipe, and both of them hid a failure:
+
+* `tail` truncated pytest's `short test summary info`, so every `FAILED` line was discarded
+  before it reached the log that was then grepped for `FAILED`.
+* **the shell reported `tail`'s exit status, not pytest's.** `pipefail` was not set, so a
+  failing suite exited 0.
+
+A grep for `FAILED` over a file with the `FAILED` lines cut, plus an exit code from the wrong
+process, is not a verification. Re-run without the pipe, the suite is **1,152 passed, 42 failed,
+92 skipped**.
+
+**None of the 42 belongs to this work**, and that is a statement with a check behind it rather
+than an assertion: all 42 sit in `tests/unit/ontology_runtime/` (33 in `test_invalid_packs.py`,
+14 in `test_ontology_hash_stability.py`, 1 in `test_schema_export_is_current.py`) plus the
+`rule_pack_version` pin, and all of them are consequences of a **concurrent** `pack_schema_version`
+1.0.0 -> 1.1.0 and `rule_pack_schema_version` 1.5.0 -> 1.6.0 landed in this same working tree by
+the module 13 work (ADR-0065..ADR-0072, dated 2026-09-07) — a migration whose invalid-pack
+fixtures and regenerated schema had not yet caught up when this run was taken. The 104 tests
+this work owns pass, as above.
+
+The `slow`-marked benchmarks are excluded and are measured separately by `make bench`; the two
+persistence budget tests still need a database and are unchanged by this work.
+
+### The rule-pack version tripwire fired, for the fifth time
+
+`tests/ontology/test_rule_pack_loads.py` pins `rule_pack_version` so that a version edit is a
+deliberate act with a failing test attached rather than a silent re-dating of every committed
+report. It failed on `assert '1.5.0' == '1.4.0'` and was updated **after** the reports were
+regenerated under the new `run_id`, not instead of regenerating them. That is the test working,
+and R-19 predicted it.
+
+### The run on real data — 150 rows, both standings
+
+```
+$ backend/.venv/bin/python scripts/build_candidate_graph.py --rows 150
+$ backend/.venv/bin/python scripts/analyze_root_causes.py --rows 150
+
+[1/9] packs              ont:55b7f5c6adeeee2c map:a85a911e567f73c2 rul:29044a40bcab8ca5
+[2/9] pin                dataco@994b3c8d24049cc4+mapa85a911e567f73c2
+[3/9] clean layer        bounded to 150 rows
+[4/9] entities           636
+[4/9] events             1,224
+[5/9] timelines          733
+[5/9] rule firings       20,328 from 12 rule(s)
+[6/9] candidates         17,864
+[7/9] derivation audit   1 confirmed: SHIP_INSTANT_IS_DERIVED
+[8/9] scored edges       9,492 (7,535 scored, 1,957 insufficient, 0 promoted)
+[9/9] causal graph       0 promoted, 9,492 rejected; 200 circuit(s) (0 genuine)
+[10/12] cases            5 selected by declared delay
+        report           .../root-cause-cases.md
+        patterns         0 motif(s), 0 bottleneck(s) [STATED]
+        report           .../root-cause-cases-diagnostic.md
+        patterns         139 motif(s), 16 bottleneck(s) [UNPROMOTED_DIAGNOSTIC]
+```
+
+Every count reproduces the previously committed run exactly, which is the check worth having:
+the pipeline was refactored (`run_pipeline` extracted from `build_causal_graph.main` so both
+scripts run one copy of the nine stages) and the numbers did not move. `run_id` DID move, to
+`run:f5e7ab410fa9eeb4`, because `rule_pack_hash` moved with the schema-1.5.0 namespaces — R-19
+for the fifth time, exactly as ADR-0035 predicted.
+
+**Under the `STATED` standing all five cases return no candidate cause.** Not a defect and not a
+surprise: the promoted graph is empty and the rejection ledger says why. This is the honest
+headline and it is what the committed `root-cause-cases.md` says.
+
+**Under `UNPROMOTED_DIAGNOSTIC` all five produce full rankings, and every one of them is
+unconvincing** — for reasons the reports themselves state:
+
+| Finding | Measured |
+|---|---|
+| `RECOMMENDED_ROOT_CAUSE` is *none* in all five | every chain composes to 0.25–0.40 against the pack's declared floor of 0.45. The pack is saying nothing here is worth acting on, and it is right |
+| the candidate cap binds in all five | 500 of 500, so every view is a choice among a truncated subset |
+| every chain carries a partial-data flag | 500 of 500 in all five cases; R-22 is total on this slice |
+| the diagnostic graph is not a causal graph | `SHIPMENT_IN_TRANSIT` touches 4,517 claims; types carry in-degree 11–13 out of 18 declared types. That is a near-complete graph |
+| the ranking is a plateau | every candidate ties at `prevents 4.000000 DAYS, chain 0.250000` |
+
+Two cases nonetheless reproduce prd.md §29's shape correctly, which is the one thing worth
+keeping from the diagnostic run: **case 5** puts `SHIPMENT_IN_TRANSIT` (not actionable) as
+earliest and `PAYMENT_APPROVED` (actionable) as most actionable, and **case 2** puts
+`PAYMENT_REQUESTED` (not actionable) as earliest against `PAYMENT_APPROVED`. The machinery
+distinguishes them and emits the trade-off. What it cannot do on this source is tell you which
+is true.
+
+---
+
+## 00j. Module 13, the Counterfactual Simulator (2026-09-07)
+
+**Status:** `built-unverified`. ADR-0065 through ADR-0072.
+
+### The prerequisite that was not there
+
+`docs/architecture.md` §2 said module 13 **"requires [a reserved ADR number] before this
+module is built."** `CONTEXT.md` OQ-007 named the same number as what unblocked it. This
+file's §13 stub named it a third time. **That ADR did not exist** — the number was reserved
+at the 2026-08-23 scaffold and skipped, and numbering had since reached ADR-0064. The number
+itself is recorded in ADR-0065, which is the one file the new rule below deliberately does not
+scan: the log is where a dead number may be named, precisely so the record survives.
+
+Three documents pointed at a decision that was never written, and
+`scripts/check_governance_consistency.py` could not see it: all six of its rules fire on an ADR
+that DOES exist, and OQ-007 was open rather than struck. This is the DEF-0001 shape — a pointer
+that reads like a check and is not — in a new place.
+
+**Fixed two ways in this commit.** The decision is written as ADR-0065 and the three pointers
+now name it; the reservation is recorded in that ADR rather than erased. And
+`check_governance_consistency.py` gains a seventh rule: every `ADR-NNNN` referenced anywhere in
+the governance files must exist. That rule ships with a `--self-test` that is observed to
+reject, as `CONVENTIONS.md` §6 requires of every enforcement script added later.
+
+### What was built
+
+| Package / file | Layer | Files | Role |
+|---|---|---|---|
+| `counterfactual_engine` | L7 | 9 | module 13 — the typed intervention language, the ontology gate, kind-aware propagation, the diff, the validity assessment, the report |
+| `core/perturbation.py` | L0 | 1 | `SimulatedInstant` and the arithmetic the metric lint refuses inside a reasoning package |
+| `core/ontology_view.py` | L0 | — | `AttributeView`, `MutabilityView` (additive; `EventTypeView` untouched) |
+| `core/identifiers.py` | L0 | — | `INTERVENTION = "itv"`, `CAUSAL_GRAPH = "cgr"` (additive) |
+| `ontology_runtime/dsl.py` | L1 | — | `mutable`, `admissible_values`, `admissible_range` on `AttributeSpec`; pack schema 1.0.0 → 1.1.0 |
+| `extraction/ontology_adapters.py` | L2 | — | `mutable_attributes_of` |
+| `rule_engine/dsl.py` | L5 | — | `CounterfactualSimulationSpec`; `rule_pack_schema_version` 1.5.0 → 1.6.0 |
+| `scripts/simulate_counterfactuals.py` | — | 1 | wiring; `make counterfactual DATASET=dataco` |
+
+### The three decisions most likely to be re-derived badly
+
+**1. A contributing cause removed REDUCES the outcome; it never eliminates it.** This is the
+single most common counterfactual error and the reason the module exists in the shape it does.
+Elimination is a **re-reachability question** — does anything still transmit into this
+consequence — and reduction is what is left when some causes stop and others do not. They are
+computed separately, held in separate accessors on `WorldDiff`, counted separately, and never
+summed. `transmitted_reading` takes `eliminated` as a keyword argument rather than inferring it
+from the removed shares summing to one, because **shares summing to one under an apportionment
+is an arithmetic coincidence and nothing reaching a consequence is a fact about the graph**;
+reading the first as the second is exactly how a partial removal comes to be reported as a
+prevention. Asserted against a hand-computed constant: four joint causes at an equal 0.25
+share, remove one, and 90.0 becomes **67.5** with the consequence still occurring.
+
+**2. A simulated instant is not a `TimeInterval`, and the frozen type was not widened.**
+`TIMESTAMP_PROVENANCE_CLASSES` excludes `SIMULATED`. The one-line change admitting it would
+have made every consumer of `TimeInterval` a consumer of simulated times without any of them
+being told — prd.md §37's conflation at the level where it is hardest to see. So a simulated
+world contains no `Event` and no `TimeInterval` at all. Two consequences follow and are stated
+rather than discovered later: module 13 constructs **no `CausalEdge`** and assigns **no
+`INFERRED`** (both asserted over the AST), and it re-verifies LAW-TIME itself over simulated
+instants. **LAW-TIME is not suspended inside a hypothetical**: a change that would place a
+cause at or after its effect is refused, not simulated and flagged.
+
+**3. An impossible premise is refused at the boundary, before anything propagates.** Every
+check after an unreachable premise passes on it: the propagation is correct, the belief
+composes correctly, the report renders correctly, and the world could not have happened.
+Nothing downstream can detect that. So validation is a separate pass over the whole set, and a
+set holding one inadmissible member never partially executes. `DECLARATION_ABSENT` is kept
+distinct from every reason meaning "checked and refused" — the first says the pack was never
+asked, and collapsing them would let an unconfigured run read as a validated one.
+
+### What it does NOT establish
+
+- **Nothing here is calibrated, and no procedure in this repository could make it so.** A
+  support envelope says a change stays inside the range this run witnessed; it does not say the
+  answer is right. This is OQ-024's argument one layer up and it is **worse**, because a
+  simulated figure reads like a measurement of a thing that did not happen. A decomposed,
+  envelope-checked, sensitivity-swept number is MORE persuasive than a bare one and is not more
+  accurate. Recorded as **R-23**; `NOT_CALIBRATED_NOTICE` is the report's first section.
+- **The rigour beyond graph surgery extends the PRD rather than implementing it.** The document
+  uses *provenance*, *validity*, *extrapolation* and *sensitivity* zero times, and Principle 5's
+  assumption enumeration binds recommendations. Opened as **OQ-029** for ratification.
+- **prd.md §57's "counterfactual plausibility" cannot be computed here** and no proxy is
+  offered — **OQ-030**.
+- **The condition re-check is a containment test over a rendered expression** and is
+  conservative in one direction only: it stops links it cannot prove should keep transmitting,
+  so consequences are under-claimed. It cannot see a condition that should have stopped holding
+  and names nothing that changed — **R-25**.
+- **Every figure is a property of the 150-row slice**, including the witnessed ranges the
+  support envelope is measured against — **R-24**, OQ-023's shape on a new surface.
+
+### Gates
+
+```
+$ backend/.venv/bin/ruff check backend scripts
+All checks passed!
+
+$ backend/.venv/bin/ruff format --check backend scripts
+393 files already formatted
+
+$ cd backend && ../backend/.venv/bin/mypy
+Success: no issues found in 207 source files
+
+$ python scripts/check_layers.py
+LAYER BOUNDARIES: clean across 207 file(s).
+
+$ python scripts/check_domain_independence.py
+LAW-DOMAIN: clean across 203 file(s) in 9 package(s).
+
+$ python scripts/check_metrics_are_declared.py
+ADR-0026: clean across 92 file(s) in 5 package(s); every metric is declared, not computed.
+
+$ python scripts/check_confidence_is_a_vector.py
+LAW-EVIDENCE: clean across 207 file(s); confidence is a vector everywhere.
+
+$ python scripts/check_law_copies.py
+FIVE LAWS: byte-identical across CONTEXT.md §2 and CONVENTIONS.md §1.
+
+$ python scripts/check_governance_consistency.py --self-test
+self-test passed: 8 inconsistency shapes rejected, 2 consistent record accepted.
+
+$ python scripts/check_governance_consistency.py
+GOVERNANCE CONSISTENCY: clean; 11 question(s) closed by an existing ADR, 21 still open,
+supersessions acknowledged both ways.
+
+$ python scripts/check_rule_pack.py --dataset dataco --no-write
+rule pack 'dataco' v1.6.0: 23 of 24 rule(s) enabled, 13 of 20 declared event type(s)
+explained (65%).
+```
+
+**Two of those scans caught real defects in this work and are recorded rather than
+smoothed over.**
+
+* `check_domain_independence.py` rejected `ordered = sorted(scalars)` in `validity.py` and
+  the heading `THE ORDER IS THE ARGUMENT` in `simulate.py`. ADR-0019's matcher has **no
+  suffix exceptions**, deliberately, and it was right both times: the fix is `sequenced`, and
+  the allowlist stayed empty.
+* `check_governance_consistency.py`'s new seventh rule rejected `PROGRESS.md` and
+  `docs/architecture.md` on its first run, because both still named the reserved ADR number
+  after the first pass had corrected only `CONTEXT.md`. **The rule found two thirds of the
+  problem it was written for, on the day it was written**, which is the only evidence that a
+  check works.
+
+### Tests — 93 new, plus one benchmark
+
+```
+$ cd backend && ./.venv/bin/pytest --no-cov -p no:cacheprovider \
+    tests/unit/counterfactual_engine tests/counterfactual \
+    tests/law/test_simulation_never_writes_back.py \
+    tests/determinism/test_simulated_world_is_stable.py \
+    tests/graph/test_extrapolation_is_flagged.py
+93 passed in 0.74s
+$ echo $?
+0
+```
+
+**Not piped.** `PROGRESS.md` §00i records what happens when a pytest run is piped through
+`tail`: the `FAILED` lines are truncated before anything greps them and the shell reports
+`tail`'s exit status rather than pytest's, so a failing suite exits 0. The exit code above is
+pytest's own.
+
+| File | Count | What it asserts |
+|---|---|---|
+| `tests/unit/counterfactual_engine/test_edge_kinds.py` | 11 | the five kinds, each against a hand-computed constant. **90.0 → 67.5** for one of four contributing causes removed, with the consequence still occurring; elimination when ALL members go; conditional invalidation AND its negative case; amplifier 90.0 → 60.0 and inhibitor 40.0 → 80.0; re-timing with and without the derivation measurement |
+| `tests/unit/counterfactual_engine/test_intervention_validation.py` | 12 | one per `RejectionReason`, plus an **exhaustiveness test** that fails when a reason is added without an assertion, plus the OQ-026 refusal and its opt-in |
+| `tests/unit/counterfactual_engine/test_simulation_properties.py` | 5 | **1,000 simulations leave the observed store byte-identical**; a surviving consequence never grows; a composed belief never exceeds its weakest link; a move never changes an interval's width; one change addresses one world |
+| `tests/counterfactual/test_counterfactual_consistency.py` | 5 | `CONVENTIONS.md` §14's three mandatory properties, plus that a world holds no historical type at all |
+| `tests/law/test_simulation_never_writes_back.py` | 48 | AST-parametrized per source file: `INFERRED` never assigned, `CausalEdge` never constructed, `revise` never called, the diagnostic standing never named, no numeric literal in a comparison, the fixed notices imported rather than restated — plus an anti-emptiness guard and a test that the permitted refusal actually exists |
+| `tests/determinism/test_simulated_world_is_stable.py` | 4 | two runs with the input handed over in **reversed sequence**, byte-identical artifact and byte-identical markdown, with emptiness refused |
+| `tests/graph/test_extrapolation_is_flagged.py` | 8 | within-support, extrapolation, the verdict replacing the figure in the rendered table, tolerance, the absent-tolerance gap, weakest-verdict-governs, and two regressions |
+
+### The prd.md §55 counterfactual budget, measured for the first time
+
+```
+  prd.md §55 counterfactual query
+    occurrences in graph          1,224
+    promoted links                9,756
+    changes admitted                  2
+
+    COUNTERFACTUAL QUERY (budgeted)
+      elapsed                     0.258s   budget 5s
+
+    WHAT THE QUERY DID
+      occurrences reached            50
+      changed                        50
+      would not have happened         3
+      smaller, still happened         8
+      truncations                     8
+      validity verdict       WITHIN_SUPPORT
+```
+
+**A second measurement of the same test read 7.477s and is recorded rather than discarded.**
+It was taken while a second Python process was running the full DataCo pipeline on the same
+8 GB machine; fixture construction in that run took 49.4 s against 0.7 s idle, a 60x
+inflation that no code change explains. The number is contention, not the query. It is kept
+here because a benchmark that only ever reports its best run is not a measurement, and
+because the honest reading of the pair is that **the budget is met on an idle machine and
+has not been measured under load** — which is a different and weaker claim than "0.258s".
+
+**What this does NOT measure**, printed by the benchmark itself: the graph is built at the
+committed slice's scale, which is 150 rows of 180,519. A query over the dataset is not
+measured and this number must not be read as though it were (OQ-023).
+
+### The run on real data — prd.md §11's own worked example, both standings
+
+```
+$ make counterfactual DATASET=dataco ROWS=150
+[1/9] packs              ont:c4a93cb2d4ca4c89 map:a85a911e567f73c2 rul:b02ea6399b720f81
+[8/9] scored edges       9,791 (7,917 scored, 1,874 insufficient, 0 promoted)
+[9/9] causal graph       0 promoted, 9,791 rejected; 200 circuit(s) (0 genuine)
+[10/11] the question     no process instance in this slice places a INVENTORY_RESERVED more
+                         than 30 minute(s) after its own start. 0 placed occurrence(s) of
+                         that type were examined.
+        substituted      SHIPMENT_DISPATCHED
+        STATED                links      0  admitted 1  reached 1  changed 1  NOT_ASSESSABLE
+        UNPROMOTED_DIAGNOSTIC links  9,791  admitted 0  reached 0  changed 0  NOT_ASSESSABLE
+```
+
+**prd.md §11 Category D asks: "If inventory reconciliation occurred within thirty minutes,
+would delivery still be delayed?" On this dataset the question cannot be posed at all**, and
+that is the headline finding rather than a preamble to one.
+
+`INVENTORY_RESERVED` — the pack's closest declared analogue of the step the question names —
+is emitted **48 times in the slice and placed in time zero times**. It is one of the thirteen
+derived types this source never timestamps (R-21). A question about *when* something happened
+has no referent when the source never said when it happened, and no amount of engine is going
+to supply one. The report carries the full placement census as evidence, because "nothing to
+move" is a claim a reader is entitled to check:
+
+| placed in time | never placed |
+|---|---|
+| `ORDER_PLACED` (150), `SHIPMENT_DISPATCHED` (145), `SHIPMENT_DELIVERED` (145) | the other **thirteen** declared types, 494 occurrences, **0 placed** |
+
+**Three of sixteen event types carry an instant.** That is the shape of this dataset, and it
+bounds every temporal question anyone can ask of it.
+
+#### The substituted question, and what happened to it
+
+The script then asks the nearest question this source CAN answer — bring
+`SHIPMENT_DISPATCHED` forward, which is prd.md §51 Workspace 5's own second example ("What if
+dispatch occurred earlier?"). **The substitution is stated in the report in bold, at the top,
+before any figure**, and is not the question prd.md §11 asked.
+
+* **Under `STATED`:** the change is admitted, and **propagates nothing**, because the stated
+  graph holds **zero links** (R-22: not one occurrence carries an `OBSERVED` timestamp, so no
+  verdict is `CERTAIN` and nothing was promoted). The world published names one changed
+  occurrence — the one that moved — and the diff says so.
+* **Under the disowned graph:** the change is **REFUSED**. Moving that dispatch 5.94 days
+  earlier would place it at or before `evt:111866b64d4c612c`, *another* `SHIPMENT_DISPATCHED`
+  which the scored graph holds as its antecedent. That link is a cross-instance artifact of a
+  near-complete scored graph, and the gate refused a world built on it rather than simulating
+  it and attaching a flag.
+
+A third shape was probed and refused for a **correct** reason: moving `SHIPMENT_DELIVERED`
+11.7 days earlier would place it at or before its own dispatch. The gate fires on a real
+temporal impossibility and on a spurious one, and says which antecedent blocked it either way.
+
+#### Do I believe the answer?
+
+**There is no answer to believe.** No simulated magnitude was produced on real data at any
+point, and every reason is a stated fact about the inputs rather than a limit of the module:
+
+1. the question as asked names a step this source never places in time;
+2. the substituted question propagates nothing under the graph the engine stands behind,
+   because that graph is empty;
+3. it is inadmissible under the graph the engine does not stand behind, because that graph
+   contains a link that makes the world temporally impossible.
+
+**Had a figure been produced under the disowned standing, I would have called it
+extrapolation and would not have believed it** — not because of the support envelope, but for
+a reason no envelope can reach: the links carrying it were scored and refused promotion, 79.3%
+of them stopped by the temporal verdict. A number propagated along claims the engine
+explicitly declines to make is arithmetic over a graph nobody asserts.
+
+The machinery is demonstrated on synthetic fixtures with analytically known outcomes, where
+the answers are checkable by hand (§ Tests above). On this dataset it is demonstrated to
+**refuse**, three times, for three different stated reasons. That is the honest state and it
+is not a failure of module 13: modules 7 and 8 are unbuilt, and R-22 says a source that never
+records an arrival cannot support a promoted causal graph however much of it is read.
+
+### What this module does NOT establish
+
+Enumerated above in "What it does NOT establish", and one more the run itself adds: **the
+propagation, magnitude and re-timing paths have never executed over real data**, because
+nothing admissible ever reached them. They are exercised by 93 tests over synthetic graphs
+with hand-computed expected values. That is real evidence about the code and **no evidence at
+all about DataCo**, and the two must not be read as one.
+
+### A record-keeping discrepancy this build found, in passing
+
+`run_id` moved twice in this commit, so every report under `docs/reports/dataco/` was
+regenerated. Three ADRs before this one say that fact as **"every *committed* report was
+regenerated"**. Only ten files under `docs/reports/` are tracked by git:
+
+```
+$ git ls-files docs/reports/ | wc -l
+10
+```
+
+— the two `data-quality` pairs, their `report.sha256`, `rule-coverage.{json,md}` and the
+README. **Every analysis report — the candidate graph, the causal graph, confidence,
+propagation, patterns, root-cause cases, and now the counterfactual pair — is written to the
+working tree and has never been committed.**
+
+Nothing is wrong with the reports; the wrong thing is the sentence. "Every committed report
+regenerated" reads as a statement about the repository's record and is a statement about a
+directory on one machine, which is the OQ-004 / DEF-0004 class: **prose claiming more
+durability than the record has.** This build repeated it once before noticing, and the
+occurrence is corrected here and in CONTEXT.md §7 rather than only in the new text.
+
+**Not fixed, because fixing it is a decision this module does not own:** whether the analysis
+reports SHOULD be committed is a question about repository policy and about diff noise —
+every one of them moves whenever `run_id` moves, which has now happened six times. It is
+recorded here so whoever owns that call makes it deliberately.
+
+### The whole suite — and the 44 failures this work caused
+
+**The scoped run was green and the work was broken.** The 93 tests belonging to module 13
+passed with pytest's own exit code 0, `make laws` was green end to end, `ruff` and
+`mypy --strict` were clean, and none of that touched the thing that was wrong.
+
+Running `pytest -m "not slow"` unpiped over the whole suite reported:
+
+```
+PYTEST EXIT: 1
+  33 FAILED tests/unit/ontology_runtime/test_invalid_packs.py
+   7 FAILED tests/unit/ontology_runtime/test_ontology_hash_stability.py
+   3 FAILED tests/law/test_enforcement_scripts_prove_themselves.py
+   1 FAILED tests/ontology/test_rule_pack_loads.py
+```
+
+**All 44 were caused by this work**, and none of them was reachable from the tests this work
+added. Three distinct causes, each worth recording because each is a different way a scoped
+green run lies:
+
+1. **40 failures from the pack schema bump.** ADR-0067 moved `pack_schema_version`
+   1.0.0 → 1.1.0, and 21 fixture packs plus two inline ones are pinned at `"1.0.0"`. The
+   `DomainPack` validator refuses a version mismatch *before* any other check, so every
+   fixture that exists to exercise a specific defect started failing on the version instead —
+   the tests were still red for the right overall reason and for entirely the wrong specific
+   one. Fixed by migrating the fixtures, which is what an additive schema bump obliges.
+2. **1 failure from the rule-pack version tripwire**
+   (`test_the_pack_declares_the_version_that_participates_in_the_run_id`). This test exists to
+   fire on exactly this, and it has now fired **six times**. Its docstring is extended rather
+   than its pin edited alone. The sixth firing is the first where `run_id` moved for **two**
+   reasons at once — ADR-0071 moved `rule_pack_version` and ADR-0067 moved `ontology_hash`,
+   and both are `RunKey` inputs — so a pin tracking only one would have stayed green while the
+   Run underneath it changed.
+3. **3 failures from the new governance rule reading ambient files.**
+   `check_governance_consistency.check(context, decisions)` is called by
+   `tests/law/test_enforcement_scripts_prove_themselves.py` with explicit arguments and an
+   exact expected failure count. Rule 7's first implementation defaulted to reading the real
+   governance files from disk, so those counts silently became a function of repository state.
+   Fixed by defaulting the parameter to empty and having `main()` pass the files explicitly:
+   **a checker called with explicit arguments is now a function of those arguments.**
+
+**The lesson is about the verification, not the code.** Scoped test runs are fast and they
+answer "does my thing work", never "did my thing break yours". The three changes that caused
+all 44 failures were the three that reached OUTSIDE module 13 — a frozen-ish schema version, a
+`RunKey` input, and a shared enforcement script — and those are precisely the changes a scoped
+run cannot see. `PROGRESS.md` §00i records a sibling of this: a whole-suite claim produced
+through a pipe that hid the failures. This one was produced by not running the suite at all
+until late.
+
+After the three fixes:
+
+```
+$ cd backend && ./.venv/bin/pytest -q --no-cov -p no:cacheprovider \
+    tests/unit/ontology_runtime tests/ontology
+$ echo $?
+0
+
+$ ./.venv/bin/pytest -q --no-cov -p no:cacheprovider \
+    tests/law/test_enforcement_scripts_prove_themselves.py
+46 passed
+$ echo $?
+0
+```
+
+And then the whole non-slow suite, unpiped, with pytest's own exit code:
+
+```
+$ cd backend && ./.venv/bin/pytest -q --no-cov -p no:cacheprovider -m "not slow"
+........................................................................ [100%]
+PYTEST EXIT: 0
+```
+
+**1,379 tests collected, exit 0.** That is the first green whole-suite figure in this
+repository's record, and it is green because the 44 failures above were fixed rather than
+because they were not looked for.
+
+**Still not verified:** the `slow`-marked tests. The full `pytest` run over EVERY test was
+started three times and never completed — it blocks on the DB-backed integration tests, which
+need the compose stack (`make up`), and this machine cannot start it (R-17 records the same
+constraint). Those tests are excluded from the figure above and their state is unknown. The
+next session should run the whole suite with the stack up.
+
+---
+
+## Module 14 — Intervention Optimizer (`causalog.recommendation_engine`, L7)
+
+**Built 2026-09-07. Status `built-unverified`.** ADR-0073 through ADR-0079.
+
+The sixteenth module minus two, and the first artifact in this system that is an
+**instruction** rather than a description. Everything upstream says what happened or what
+might have; this says what to do, to a person who will be held accountable for having done
+it. The engineering follows from that one fact.
+
+### What landed
+
+| Piece | Where | Why it is where it is |
+|---|---|---|
+| `risk_classes` vocabulary + `risk_class` per event type | `ontology/packs/_base`, `ontology/packs/dataco` | prd.md §50 requires an operational risk and nothing declared one (ADR-0073). Pack schema 1.1.0 → **1.2.0**. |
+| `recommendation` rule namespace | `rule_engine/dataco/rules.yaml` | Weights and bounds are judgements, and judgements live in the pack (ADR-0079). Rule-pack schema 1.6.0 → **1.7.0**. |
+| `core/scalarization.py` | `causalog.core` | `CONVENTIONS.md` §6a refuses `cost`/`impact` arithmetic inside `recommendation_engine/` and is right to (ADR-0078). |
+| The module | `causalog.recommendation_engine` | Ten files, mirroring `counterfactual_engine`'s breakdown. |
+| Wiring | `scripts/recommend_interventions.py`, `make recommend` | Runs under both standings, like its two siblings. |
+
+### Evidence
+
+```
+$ make lint typecheck
+All checks passed!
+Success: no issues found in 218 source files
+
+$ make laws ; echo "exit $?"
+LAW-DOMAIN: clean across 214 file(s) in 9 package(s).
+LAW-EVIDENCE: clean across 218 file(s); confidence is a vector everywhere.
+LAYER BOUNDARIES: clean across 218 file(s).
+ADR-0026: clean across 102 file(s) in 5 package(s); every metric is declared, not computed.
+ONTOLOGY SCHEMA: ontology/_schema/ontology.schema.json matches the DSL models.
+GOVERNANCE CONSISTENCY: clean; 11 question(s) closed by an existing ADR, 21 still open.
+exit 0
+
+$ cd backend && ../backend/.venv/bin/pytest -q --no-cov -m "not slow"
+1382 passed, 92 skipped, 9 deselected in 40.43s
+```
+
+Module 14's own tests: **6** gate unit, **10** Principle-5 type, **17** scalarization, **10**
+cut-set, **5** portfolio non-additivity, **40** structural law (parametrized per source file,
+so they grow with the package), **3** added to `tests/counterfactual/`, **4** determinism,
+**1** integration budget.
+
+**prd.md §55's recommendation budget is measured for the first time.**
+
+```
+$ make bench   (recommendation section)
+  prd.md §55 recommendation generation
+    occurrences in graph          1,224
+    promoted links                9,756
+    RECOMMENDATION RUN (budgeted)
+      elapsed                     1.246s   budget 5s
+    WHAT THE RUN DID
+      nodes proposed              1,223
+      refused at the gate           815
+      candidates gated in            40
+      cut sets considered             2
+      published                       2
+```
+
+The first version of that benchmark **passed in 0.037 s while refusing all 1,223 candidates
+at the gate** — it measured discovery and nothing else. The assertion now refuses emptiness at
+three stages (proposed, gated-in, and reaching the ranking), and the fixture stamps
+actionability so the run has work to do. A benchmark that passes on having no work to do is
+worse than no benchmark, and this one demonstrated that on its first run rather than in
+principle.
+
+### The DataCo run: **zero recommendations, under both standings**
+
+```
+$ make recommend DATASET=dataco
+    outcomes protected  SHIPMENT_DELAYED, ORDER_CANCELED -> 100 occurrence(s)
+        STATED                 links      0  proposed   659  refused     0  published 0  withheld 200
+        UNPROMOTED_DIAGNOSTIC  links  9,827  proposed 1,130  refused   471  published 0  withheld 202
+```
+
+| | STATED | UNPROMOTED_DIAGNOSTIC |
+|---|---|---|
+| published | **0** | **0** |
+| withheld: below the belief floor | 21 | **124** |
+| withheld: benefit not measurable | 179 | 78 |
+| refused at the actionability gate | 0 | **471** (all `NOT_ACTIONABLE`) |
+| cut sets searched | 0 | 202 |
+
+**Every candidate on the diagnostic graph composes to a belief of 0.03** against the pack's
+declared floor of 0.50. The floor was chosen on principle — "more likely than not that the
+chain holds" — and the pack says beside the value that it was not chosen to make this run
+produce output. It did not, and that is recorded here rather than tuned away.
+
+### The ten that came closest, and the critique of them
+
+These are **withheld ledger entries from the disowned diagnostic run**, sequenced by measured
+benefit. Not one of them is a recommendation: none was published, none carries a confidence
+vector, an evidence chain or a justification, and the graph they were derived over is one the
+engine does not stand behind. They are listed because what was nearly recommended, and why it
+was not, is a sharper statement about this dataset than the empty published list is.
+
+| # | Node type(s) | n | Benefit (range) | Cost | Risk | Belief | Chains | Verdict |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `SHIPMENT_DELAYED` | 1 | 3.0 – 3.0 DAYS (eliminated) | HIGH | MODERATE | 0.03 | 247/18,962 | **artifact — circular** |
+| 2 | `SHIPMENT_DELAYED` | 1 | 2.0 – 2.0 DAYS (eliminated) | HIGH | MODERATE | 0.03 | 288/18,962 | **artifact — circular** |
+| 3 | `SHIPMENT_DELAYED` + `SHIPMENT_DISPATCHED` | 3 | 0.25 – 1.0 DAYS | MODERATE | HIGH | 0.03 | 3,370/18,962 | **partly real** |
+| 4 | `SHIPMENT_DELAYED` + `SHIPMENT_DISPATCHED` | 2 | 0.25 – 1.0 DAYS | MODERATE | HIGH | 0.03 | 2,779/18,962 | **partly real** |
+| 5 | `SHIPMENT_DISPATCHED` | 1 | 0.25 – 1.0 DAYS | MODERATE | HIGH | 0.03 | 925/18,962 | **the only genuinely useful one** |
+| 6–8 | `SHIPMENT_DELAYED` | 1 | 1.0 – 1.0 DAYS (eliminated) | HIGH | MODERATE | 0.03 | ~296/18,962 | **artifact — circular** |
+| 9–10 | `SHIPMENT_DELAYED` | 1 | 0.25 – 1.0 DAYS | HIGH | MODERATE | 0.03 | 281/18,962 | **artifact — circular** |
+
+**Which are genuinely useful operational advice: one, partially.** Entry 5 —
+`SHIPMENT_DISPATCHED` — is the only entry whose act an operator could actually take and whose
+premise is not circular. It is also prd.md §51 Workspace 5's own worked example ("What if
+dispatch occurred earlier?"), which is mild corroboration that the machinery found the lever a
+human would have named. Entries 3 and 4 are that same act bundled with a circular one.
+
+**Which are artifacts of data limitations: the other nine, and here is which limitation
+produced each.**
+
+1. **Eight of ten propose acting on `SHIPMENT_DELAYED` to prevent a delay.** This is circular
+   and is the sharpest finding in the run. It is an artifact of the **near-complete scored
+   graph**: one event type touches 4,517 of 9,492 claims, so the delay event is upstream of
+   almost everything and dominates every leverage measure. The actionability gate cannot catch
+   it, because the pack declares `SHIPMENT_DELAYED` genuinely actionable (an operator *can*
+   expedite a delayed consignment) — the declaration is right and the inference is wrong. **A
+   causal-graph problem surfacing as a recommendation problem.**
+2. **Every belief is identically 0.03**, so the four-objective ranking is doing no work: the
+   sequence is decided by benefit and cost alone. This is R-14 and R-22 compounding — day
+   granularity, no `OBSERVED` timestamps, therefore no promotion and weak chains throughout.
+3. **Every benefit is a whole or quarter number of DAYS.** The source records shipping in
+   whole days, so a benefit range of "0.25 – 1.0 DAYS" has a precision the data cannot support
+   at the low end and is really "somewhere under a day". R-14, arriving in the most persuasive
+   possible form (R-23).
+4. **Coverage figures are ~1.5% of 18,962 chains** and read as small when they are not
+   comparable across entries: the chain denominator counts every (source, outcome) pair, most
+   of which are artifacts of the same graph density as (1).
+5. **All 471 gate refusals are `NOT_ACTIONABLE` and none is a stamp disagreement** — which
+   means the actionability layer is internally consistent and tells us nothing about whether it
+   is *correct* (R-15/R-25: nothing here can check that).
+6. **The eliminations are the weakest figures despite looking the strongest.** A degenerate
+   range reads as an exact answer; its width is zero because there is no apportioned share to
+   perturb, not because the figure is well established. The `degenerate_because` sentence is
+   what stops that being invisible, and it is doing real work on this run.
+7. **179 of 200 STATED candidates report `BENEFIT_NOT_MEASURABLE`** — over an empty graph,
+   correctly. The 21 that reached the belief floor did so on a graph with zero links, which is
+   worth noting as a curiosity: the low-cost generator proposes candidates that the leverage
+   generator cannot, and they estimate to nothing.
+
+**What this run does establish.** The gate refuses, the ledger records, the floor withholds,
+the cut-set search finds sets and refuses oversized joint groups, the portfolio arithmetic
+never sums, and the budget is met with room. The machinery is exercised end to end on real
+data. **What it does not establish is that any recommendation this engine makes would be
+right**, and on this dataset it declines to make any.
+
+### Two problems found by this module's own tests, recorded because they were real
+
+1. **The greedy cut-set search scored three candidates and would have published a "top ten".**
+   `find_cut_sets` emitted only its cumulative greedy prefixes, at most `portfolio_size_cap` of
+   them, so 200 candidates produced 3 scored items. Fixed by recording every singleton under
+   both regimes (ADR-0076). Found by running the real script, not by a test — the unit fixtures
+   were all small enough to take the exact branch.
+2. **A declared bound quietly did not hold.** Joint expansion could push a cut set past
+   `portfolio_size_cap`, producing an artifact that looked bounded and was not. Now refused and
+   named. Found by writing the size-cap test and noticing the joint test still passed.
+
+### Not verified
+
+The `slow`-marked DB-backed tests, for R-17's reason. The recommendation budget test is
+`slow`-marked and WAS run (its figure is above); the compose-stack ones were not.

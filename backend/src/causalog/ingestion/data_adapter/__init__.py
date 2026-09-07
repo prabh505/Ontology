@@ -23,6 +23,7 @@ from causalog.ingestion.data_adapter.cleaning import (
     build_interval,
 )
 from causalog.ingestion.data_adapter.findings import RULES, Dimension, Finding, RuleSpec, rule
+from causalog.ingestion.data_adapter.precedence import derived_precedence_index
 from causalog.ingestion.data_adapter.profile import (
     ColumnProfile,
     DatasetProfile,
@@ -60,6 +61,7 @@ __all__ = [
     "apply_transforms",
     "apply_transforms_stepwise",
     "build_interval",
+    "derived_precedence_index",
     "import_dataset",
     "render_markdown",
     "report_sha256",
