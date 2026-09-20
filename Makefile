@@ -16,8 +16,8 @@ PIP      := $(VENV)/bin/pip
 
 .DEFAULT_GOAL := help
 .PHONY: help setup doctor up down verify lint typecheck laws test test-fast bench import recommend \
-        events rules root-cause migrate migrate-down migrate-status rebuild-graph \
-        verify-projection reset
+        events rules root-cause counterfactual serve openapi migrate migrate-down \
+        migrate-status rebuild-graph verify-projection reset
 
 help: ## Show this list
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -62,7 +62,9 @@ laws: ## The enforcement scripts alone -- each proves itself, then scans (DEF-00
 	$(PY) scripts/check_migration_pairs.py --self-test
 	$(PY) scripts/check_rule_pack.py --self-test
 	$(PY) scripts/check_projection_drift.py --self-test
+	$(PY) scripts/check_determinism.py --self-test
 	$(PY) scripts/export_ontology_schema.py --self-test
+	$(PY) scripts/export_openapi.py --self-test
 	@echo "--- scans"
 	$(PY) scripts/check_law_copies.py
 	$(PY) scripts/check_domain_independence.py
@@ -81,6 +83,10 @@ laws: ## The enforcement scripts alone -- each proves itself, then scans (DEF-00
 # so it is removed in the commit that made it unnecessary rather than left to be found.
 	$(PY) scripts/check_metrics_are_declared.py
 	$(PY) scripts/export_ontology_schema.py --check
+# The published OpenAPI document is generated from the application, never hand-edited, for
+# the reason the ontology schema is: a hand-written contract beside a code implementation
+# is two descriptions of one thing, free to disagree (ADR-0085).
+	$(PY) scripts/export_openapi.py --check
 
 typecheck: ## mypy --strict over the distribution, tsc --noEmit over the frontend
 	cd backend && ../$(VENV)/bin/mypy
@@ -116,6 +122,12 @@ recommend: ## Run module 14; write both standings' recommendation reports
 	@test -n "$(DATASET)" || (echo "usage: make recommend DATASET=dataco [ROWS=150]" && exit 1)
 	$(PY) scripts/recommend_interventions.py --dataset "$(DATASET)" $(if $(ROWS),--rows "$(ROWS)")
 
+serve: ## Run the API on :8000 (reload off; this is the contract, not a playground)
+	$(VENV)/bin/uvicorn causalog.api.asgi:app --host 0.0.0.0 --port 8000
+
+openapi: ## Regenerate docs/openapi.json from the application
+	$(PY) scripts/export_openapi.py --write
+
 bench: ## Measure the prd.md §55 performance targets
 	@echo "prd.md §55 targets: load <30s, graph <60s, root-cause <3s, counterfactual <5s, recommendation <5s"
 	$(PY) scripts/check_determinism.py || true
@@ -133,7 +145,12 @@ bench: ## Measure the prd.md §55 performance targets
 # candidate and again per multi-node set, so the pack's declared caps are what keep it
 # inside the budget rather than an implementation detail -- the test prints them.
 	cd backend && ../$(VENV)/bin/pytest tests/integration/test_recommendation_budget.py -q -s --no-cov
-	@echo "STILL NOT-RUNNABLE: the load and graph budgets."
+# Module 16 measures the root-cause budget again, through HTTP this time: authentication,
+# authorization, the audit write, view conversion and serialization all sit between the
+# client and the number the module-level test reports. A query inside its budget at the
+# module and outside it at the boundary is still a missed budget.
+	cd backend && ../$(VENV)/bin/pytest tests/integration/test_api_budgets.py -q -s --no-cov
+	@echo "STILL NOT-RUNNABLE: the load and graph budgets (OQ-018, OQ-019)."
 
 # `make up` deliberately does NOT migrate. The PostgreSQL init directory applies *.sql
 # without writing the migration ledger, which leaves a schema that exists and a ledger that

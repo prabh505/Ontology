@@ -16,12 +16,35 @@ every method:
   artifacts are scoped to `run_id`. An implementation that let an inference write into a
   dataset-scoped table would defeat LAW-PROVENANCE structurally rather than merely
   permitting a violation (ADR-0013).
+
+**Correction, recorded rather than overwritten (DEF-0004's norm).** Until module 16 this
+port declared `retract_states(..., as_of: str)` and `states_as_believed_at(...,
+system_instant: str)`, while BOTH implementations -- `persistence.postgres` and
+`persistence.memory` -- took a `datetime`. Neither satisfied the Protocol, and
+`mypy --strict` had never said so because nothing in the distribution had ever assigned an
+adapter to the port type: the wiring layer that does it did not exist. The first line of
+`orchestration.wiring` to name `FactRepository` surfaced it immediately.
+
+The same check surfaced a second divergence of the same shape: ADR-0032 gave
+`write_states`, `write_transitions` and `write_relationships` a `dataset_version` and a
+`believed_from` in both adapters -- the bi-temporal write side -- and the port kept the
+pre-ADR-0032 signatures. `dataset_version` is not optional there: it is the scoping
+asymmetry two paragraphs above, so a port that omitted it described a write that could not
+place the fact it was writing.
+
+The port was the outlier in both cases: instants are now `datetime`, which is what
+`CONVENTIONS.md` §10 requires of every instant in this system and what the `Clock` port
+already returns, and the write side now carries what ADR-0032 gave it. No adapter
+changed. This is the OQ-004 / DEF-0001 class once more -- a contract that could not be
+observed to be violated -- and it is the reason a port is worth little until something
+assigns to it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
-from typing import Protocol, runtime_checkable
+from datetime import datetime
+from typing import Final, Protocol, runtime_checkable
 
 from causalog.core.run import Run, RunKey
 from causalog.core.types import (
@@ -36,6 +59,7 @@ from causalog.core.types import (
 )
 
 __all__ = [
+    "AUDITABLE_ACTIONS",
     "AuditSink",
     "BulkFactWriter",
     "DerivedCache",
@@ -43,6 +67,40 @@ __all__ = [
     "GraphProjection",
     "SchemaMigrator",
 ]
+
+
+#: The closed action vocabulary of `CONVENTIONS.md` §8.
+#:
+#: It lives HERE, beside the port, rather than in one adapter. It was declared in
+#: `persistence.postgres.audit_sink` until module 16, with the consequence that the
+#: PostgreSQL sink refused an action outside the list and the in-memory fake accepted
+#: anything -- so every audit test in the unit suite proved less than it appeared to, and
+#: `persistence.memory`'s own docstring ("every law the real adapter enforces is enforced
+#: here too") was false about the one law that names this constant. A contract enforced by
+#: one implementation is a habit, not a contract. The adapter re-exports the name so no
+#: caller moved.
+#:
+#: The first seven members are `CONVENTIONS.md` §8's table verbatim. The last three arrive
+#: with module 16 (ADR-0080): that table was written for a pipeline that nothing could call
+#: over HTTP, so it names the reads an API must audit and none of the mutations an API
+#: makes possible. prd.md §54 requires auditing the mutations too, and an action a call
+#: site invented would be unfilterable, so they are added here deliberately.
+AUDITABLE_ACTIONS: Final[frozenset[str]] = frozenset(
+    {
+        "DATASET_IMPORTED",
+        "ONTOLOGY_CHANGED",
+        "RULE_SET_CHANGED",
+        "CAUSAL_EDGE_INFERRED",
+        "RECOMMENDATION_PRODUCED",
+        "COUNTERFACTUAL_RUN",
+        "INFERENCE_ENDPOINT_ACCESSED",
+        "STATE_RETRACTED",
+        "PROJECTION_REBUILT",
+        "PIPELINE_EXECUTION_STARTED",
+        "DATASET_MAPPING_SUBMITTED",
+        "INFERRED_ARTIFACTS_DELETED",
+    }
+)
 
 
 @runtime_checkable
@@ -90,7 +148,12 @@ class FactRepository(Protocol):
         """
         ...
 
-    def write_states(self, states: Iterable[State]) -> int:
+    def write_states(
+        self,
+        states: Iterable[State],
+        dataset_version: str,
+        believed_from: datetime | None = None,
+    ) -> int:
         """Persist states as a new belief, opening a system period for each.
 
         Never updates an existing state in place. A re-derivation that changes a state
@@ -99,11 +162,21 @@ class FactRepository(Protocol):
         """
         ...
 
-    def write_transitions(self, transitions: Iterable[Transition]) -> int:
+    def write_transitions(
+        self,
+        transitions: Iterable[Transition],
+        dataset_version: str,
+        believed_from: datetime | None = None,
+    ) -> int:
         """Persist transitions as a new belief, opening a system period for each."""
         ...
 
-    def write_relationships(self, relationships: Iterable[Relationship]) -> int:
+    def write_relationships(
+        self,
+        relationships: Iterable[Relationship],
+        dataset_version: str,
+        believed_from: datetime | None = None,
+    ) -> int:
         """Persist structural relationships as a new belief.
 
         Refuses a `CAUSES` relationship type. Causal edges are a separate artifact and are
@@ -116,7 +189,7 @@ class FactRepository(Protocol):
         """Persist citations. The raw source record is never passed here or stored."""
         ...
 
-    def retract_states(self, state_ids: Sequence[str], as_of: str) -> int:
+    def retract_states(self, state_ids: Sequence[str], as_of: datetime) -> int:
         """Close the open system period of each named state at `as_of`.
 
         The single sanctioned mutation in the fact store. It records that the engine has
@@ -155,7 +228,9 @@ class FactRepository(Protocol):
         """Yield currently believed relationships sequenced by `relationship_id`."""
         ...
 
-    def states_as_believed_at(self, dataset_version: str, system_instant: str) -> Iterator[State]:
+    def states_as_believed_at(
+        self, dataset_version: str, system_instant: datetime
+    ) -> Iterator[State]:
         """Yield the states this system believed at `system_instant` (ADR-0032).
 
         The bi-temporal read. `states_for_dataset` answers "what does the engine believe

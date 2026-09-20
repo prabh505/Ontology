@@ -73,6 +73,19 @@ IN_SCOPE_PACKAGES = (
     "counterfactual_engine",
     "recommendation_engine",
     "rule_engine",
+    # `api` and `orchestration` are the two layers that could reintroduce the domain at the
+    # very end of the pipeline: a route path naming a domain concept, or a wiring module
+    # branching on one. Added 2026-09-20 with module 16 (ADR-0081), for the reason ADR-0026
+    # gave for `ontology_runtime` and ADR-0037 gave for `ingestion`/`extraction`: the
+    # packages built to keep the domain out were the packages not being checked for it.
+    #
+    # This is why prd.md §53's example paths are not used verbatim. `/timeline/{order}` and
+    # `/root-cause/{order}` both carry a banned stem; the engine computes over process
+    # instances, so the parameter is `process_instance_id` and `docs/api.md` carries the
+    # §53-to-actual mapping. A path is the most durable vocabulary a system publishes --
+    # renaming one breaks every client -- so it is the last place a domain word should land.
+    "api",
+    "orchestration",
 )
 
 SCANNED_SUFFIXES = (".py", ".md", ".sql", ".cypher")

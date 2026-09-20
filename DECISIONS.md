@@ -5868,3 +5868,555 @@ committed report. Combined with ADR-0073's `ontology_hash` move, this is the sec
 ### Reversibility cost
 
 **Low.** Additive and defaulted.
+
+---
+
+## ADR-0086 — Add `httpx` to the pinned dev dependency set, for the ASGI test client
+
+- **Date:** 2026-09-20
+- **Status:** accepted
+- **Supersedes:** —
+- **Amends:** ADR-0015 (the pinned dependency set)
+- **Affects modules:** 16 Visualization API (tests only)
+- **Affects interfaces:** none
+
+### Context
+
+`CONVENTIONS.md` §14 requires an **API contract** test kind in `tests/api/`, asserting
+"response schema, provenance fields present, output envelope present", and marks it
+"Required for module 16". Those assertions have to be made against a real request/response
+cycle: the envelope is attached by a response builder, the permission matrix by a
+dependency, the correlation id by middleware, and the typed error bodies by exception
+handlers. Calling a route function directly exercises none of that, so a suite written
+that way would pass while every mechanism this module exists to provide was broken.
+
+FastAPI's `TestClient` drives the ASGI application in-process and exercises all of it. It
+is a re-export of `starlette.testclient.TestClient`, which requires `httpx`. `httpx` is not
+in `backend/pyproject.toml`, and `scripts/check_dependency_policy.py` fails the build on
+any declared dependency ADR-0015 does not name — so adding the import without this ADR
+would break `make lint`, which is the mechanism working as intended.
+
+### Options considered
+
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Call route functions directly | Rejected. Dependencies, middleware and exception handlers are precisely what `tests/api/` must cover; this tests the handler bodies and nothing that makes them safe. A permission-matrix test written this way would assert that a function the caller was never authorized to reach returns the right value. |
+| B | Hand-write a minimal ASGI client in `tests/` | Rejected. It is perhaps eighty lines to do badly and several hundred to do correctly — redirects, cookies, multipart, streaming — and every defect in it produces a test failure that looks like an API defect. It also has no owner. |
+| C | Add `starlette` as a direct dependency and use its client | Rejected. Same transitive requirement on `httpx`, so it adds a second declared dependency to obtain the first, and pins a library we otherwise consume only through FastAPI. |
+| D | **Add `httpx` to the dev extra, pinned exactly** | **Chosen.** One pin, test-only, and the thing it enables is a requirement `CONVENTIONS.md` §14 already states. |
+
+### Decision
+
+The V1 dependency set is ADR-0015's table with one row added to the **dev** extra, beside
+ADR-0024's `hypothesis`:
+
+| Dependency | What it solves | Nondeterminism | Domain assumptions | License; removal cost |
+|---|---|---|---|---|
+| `httpx==0.28.1` (dev) | The transport `fastapi.testclient.TestClient` requires, so `tests/api/` can assert against real requests and responses — envelope, provenance fields, permission matrix, typed errors, correlation header | None. The client is synchronous and in-process; it opens no socket and reaches no network, so no test depends on timing or on a port being free | None; it carries no domain vocabulary and the fixtures remain synthetic (`CONVENTIONS.md` §14) | BSD-3-Clause; **low** — test-only, and the alternative is option B at a known cost |
+
+`httpx` is a **dev** dependency and may not be imported from `backend/src/`. Nothing in the
+distribution imports it; it is reached only through `fastapi.testclient`.
+
+### Consequences
+
+**Positive:** `tests/api/` can assert what `CONVENTIONS.md` §14 requires it to assert. The
+permission matrix test becomes meaningful — it exercises the dependency that enforces the
+matrix rather than a function that assumes it already ran. The production error-leak test
+becomes possible at all, since it needs the exception handlers.
+
+**Negative:** One more pin to keep current, and `httpx` moves faster than the rest of this
+set. It also brings `httpcore`, `h11`, `anyio`, `idna`, `certifi` and `sniffio`
+transitively — six packages for a test client, which is more than it looks like it should
+cost. Most were already present through FastAPI and uvicorn; `httpcore` and `h11` are new
+to the lock.
+
+**Obligations created:** the pin is exact; `httpx` is named in this ADR so
+`check_dependency_policy.py` accepts it; a law test asserts nothing under `backend/src/`
+imports it.
+
+### Reversibility cost
+
+**Low.** Removing it means removing the pin and rewriting `tests/api/` against option B,
+which is mechanical and touches no production code.
+
+---
+
+## ADR-0080 — The response envelope is a generic wrapper; no route may return a bare body
+
+- **Date:** 2026-09-20
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 16 Visualization API
+- **Affects interfaces:** `ApiResponse`, the HTTP API
+
+### Context
+
+`CONVENTIONS.md` §11 states that "an output without its envelope cannot be verified and is
+a defect", and `docs/architecture.md` §2 lists "returning a body without its envelope"
+under what module 16 is forbidden from. Neither says how that is enforced, and the honest
+answer for most APIs is "by review" — which fails the first time somebody adds a route in a
+hurry, and fails silently, because a body missing a field still serializes.
+
+The same applies more sharply to confidence. LAW-EVIDENCE says a bare float is a defect;
+an API that serializes a float into a field called `confidence` has produced one.
+
+### Options considered
+
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Document the requirement; review each route | Rejected. This is the status quo for the repository's other invariants, and every one of them that mattered was eventually given a lint or a law test instead (DEF-0001's lesson). |
+| B | Middleware that injects the envelope into every response | Rejected. Middleware cannot know the `run_id` a handler resolved, so it would have to re-derive it or the handler would have to stash it somewhere — and a response that failed to stash it would silently get a wrong envelope rather than none, which is worse. |
+| C | **A generic `ApiResponse[T]` that cannot be constructed without its envelope, plus a law test over the route table and the AST** | **Chosen.** |
+
+### Decision
+
+Every route declares `response_model=ApiResponse[...]`. `ApiResponse` requires `scope`,
+`provenance`, `standing`, `stage_status`, `timing`, `generated_at` and `data`, and requires
+`envelope` whenever `scope` is `RUN_SCOPED`. `confidence` is a `ConfidenceView`, whose
+`components` carries `min_length=1`, so **the API cannot return a confidence without its
+decomposition**.
+
+`ResponseScope` exists because an `OutputEnvelope` describes ONE run and a few endpoints are
+not about one run: a listing spans many, and a job that refused before its packs resolved
+has none yet (migration 0017's `run_id` is nullable for that reason). The alternative was to
+synthesize an envelope of empty strings, which would be unverifiable while looking verified.
+`CATALOG` is therefore a declared, tested, closed set rather than a fallback.
+
+Three mechanisms enforce it, in `tests/law/test_api_returns_no_body_without_envelope.py`:
+the route table is walked and every non-exempt route must declare an `ApiResponse[...]`;
+the AST of every file in `api/routes/` is walked, parametrized per source file, and no file
+may construct `ApiResponse` directly; and both checks are observed to REJECT a planted
+violation before they are trusted to accept a real route.
+
+`respond` / `respond_catalog` are the only constructors, and they take a `QueryResult`,
+which itself cannot exist without an envelope.
+
+### Consequences
+
+**Positive:** Omitting the envelope stops being possible rather than being discouraged. A
+client can rely on nine version fields, a provenance summary and a timing record on every
+run-scoped body. The `min_length=1` on components makes LAW-EVIDENCE structural at the wire,
+and it is published in the OpenAPI document, so a generated client inherits the guarantee.
+
+**Negative:** Every payload type is wrapped, so a client reaches through `data` for the
+thing it wanted — more verbose for the common case, and it makes the OpenAPI document larger
+(one `ApiResponse_X_` schema per payload type). The `CATALOG` scope is a hole by
+construction: it is closed and tested today, but it is the place a future route could hide
+from the envelope requirement, and the test enumerating it is what has to be maintained.
+
+**Obligations created:** the law test above; `CATALOG` stays a closed list;
+`docs/api.md` publishes the envelope's fields.
+
+### Reversibility cost
+
+**Medium.** Unwrapping the envelope means changing every response body and every client.
+
+---
+
+## ADR-0081 — Roles are prd.md §10's five user types; the permission matrix is data
+
+- **Date:** 2026-09-20
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 16 Visualization API
+- **Affects interfaces:** `Role`, `Capability`, `PERMISSIONS`
+
+### Context
+
+prd.md §54 says "Role-based access." That is the entire requirement; the document names no
+roles, no permissions and no mechanism. prd.md §10 names five user types, and a grep of all
+2,408 lines finds no sixth candidate anywhere. `CONVENTIONS.md` §8 meanwhile requires every
+inference-endpoint access to record an `actor` and a `role` — an obligation that has been
+unmeetable since the audit schema was written, because nothing in the distribution could
+name either.
+
+### Options considered
+
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Invent a role set (admin/editor/viewer) | Rejected. `CONVENTIONS.md` §4: do not invent requirements. A role set is a product decision and inventing one in the API layer makes it permanent by accident. |
+| B | Make roles configuration | Rejected. A configurable matrix cannot be tested against prd.md, and "what can an executive see" becomes a deployment question rather than a product one. |
+| C | **The five §10 user types, under domain-neutral names, with the matrix as data** | **Chosen.** |
+
+### Decision
+
+`Role` is a closed enum of exactly prd.md §10's five user types. The names are functional —
+`OPERATIONS_MANAGER`, `HISTORICAL_ANALYST`, `EXECUTIVE`, `DATA_SCIENTIST`,
+`PROCESS_IMPROVEMENT` — because `causalog.api` now sits in the LAW-DOMAIN scan and a role
+named after the first implementation's industry would put that industry into the reasoning
+surface's vocabulary permanently. The one-to-one mapping back to §10 is published in
+`docs/api.md`.
+
+Authorization is by `Capability`, not by route path: a matrix keyed by path must be edited
+whenever a path is added and is invisible when forgotten, whereas a new route must name one
+of a closed capability set and naming it is a decision a reviewer sees in the diff.
+`PERMISSIONS` is a frozen mapping, rendered into `docs/api.md` from that value rather than
+retyped, and `tests/api/test_permission_matrix.py` exercises every role against every route.
+
+**`api` and `orchestration` join the LAW-DOMAIN scan**, for the reason ADR-0026 gave when it
+added `ontology_runtime` and ADR-0037 gave for `ingestion`/`extraction`: the packages built
+to keep the domain out were the packages not being checked for it. A consequence is that
+prd.md §53's example paths cannot be used verbatim — two of them name their path parameter
+with a banned stem — so the paths are generalized and `docs/api.md` carries the mapping. A
+path is the most durable vocabulary a system publishes, so it is the last place a domain
+word should land.
+
+### Consequences
+
+**Positive:** The matrix is one readable table, testable exhaustively, and traceable to
+prd.md §10 line by line. `CONVENTIONS.md` §8's `actor` and `role` finally have suppliers.
+The LAW-DOMAIN scan now covers every package that could reintroduce the domain — it caught
+three violations in this change's own prose on its first run.
+
+**Negative:** Five roles is almost certainly too few for a real deployment, and the model has
+no groups, no per-run scoping and no delegation. **prd.md names no administrator**, yet
+`MUTATE_DATASET`, `EXECUTE_PIPELINE` and `DELETE_INFERRED` need a holder; the defaults give
+them to `DATA_SCIENTIST` (with `EXECUTE_PIPELINE` also to `PROCESS_IMPROVEMENT`) and that is
+a **proposed default awaiting a product owner's ruling**, recorded as OQ-033 and pinned by a
+test so that changing it is deliberate. The neutral role names also no longer match prd.md
+§10's headings word for word, so the mapping table is load-bearing documentation.
+
+**Obligations created:** OQ-033; the permission matrix test; `docs/api.md` publishes the
+matrix and the §10 mapping.
+
+### Reversibility cost
+
+**Low** for the matrix; **medium** for the role set, which appears in issued credentials.
+
+---
+
+## ADR-0082 — Identity is a `core` port; V1 verifies a signed token with the standard library
+
+- **Date:** 2026-09-20
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 16 Visualization API
+- **Affects interfaces:** `Principal`, `Authenticator`
+
+### Context
+
+ADR-0081 settles what a role may do. It does not settle where a role comes from. prd.md §54
+names no authentication mechanism, and `CONVENTIONS.md` §12 requires an ADR before any
+third-party import is written — so reaching for a JWT library would be a dependency decision
+taken to satisfy a requirement nobody stated.
+
+### Options considered
+
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | PyJWT | Rejected for V1. It is the conventional answer and would need its own ADR to satisfy an unstated requirement; the port below makes adopting it later an adapter swap rather than a rewrite. |
+| B | Static API keys mapped to roles in configuration | Rejected. No expiry and no identity beyond the key, so the audit trail's `actor` would name a key rather than a person. |
+| C | **A `core` port with a stdlib HMAC signed-token adapter** | **Chosen.** No dependency, fully testable, and the mechanism is replaceable without touching a route. |
+
+### Decision
+
+`causalog.core.ports.identity` declares `Principal` and `Authenticator`.
+`causalog.orchestration.identity.SignedTokenAuthenticator` implements it with `hmac` and
+`hashlib`, secret from `CAUSALOG_API_SECRET`, with no development default — a default secret
+is a published secret. Three properties are deliberate: the signature covers the
+**transported** payload bytes rather than a re-serialization (re-serializing is the classic
+signature bypass); comparison is `hmac.compare_digest`, never `==`; and expiry is checked
+against the injected `Clock`, so a test can move time.
+
+Refusal is an exception, never a `None` and never an anonymous fallback principal: a caller
+that silently degraded to a default identity would write audit rows attributing reads to
+whoever that default named, which is worse than no audit trail because it looks like one.
+Every 401 returns one body whatever went wrong, while the specific reason goes to the log.
+
+### Consequences
+
+**Positive:** No dependency, no ADR-0015 amendment, and the whole surface is testable with
+a clock a test controls. An external identity provider later is an adapter.
+
+**Negative:** This is a hand-rolled token format, and hand-rolled crypto is where mistakes
+live. It has **no key rotation, no revocation and no refresh** — a leaked token is valid
+until it expires, and the only remedy is rotating the secret, which invalidates every token
+at once. It is adequate for a V1 whose deployment model is a single service, and it should
+not survive contact with a real user base; that is what the port is for.
+
+**Obligations created:** `CAUSALOG_API_SECRET` is documented in `deployment/.env.example`
+and `docs/api.md`; the secret is never logged or echoed in an error.
+
+### Reversibility cost
+
+**Low.** The port is the seam; a real IdP adapter changes no route.
+
+---
+
+## ADR-0083 — Pipeline execution is a resumable job with a Postgres-backed stage ledger
+
+- **Date:** 2026-09-20
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** all (the pipeline), 16 Visualization API
+- **Affects interfaces:** `JobStore`, `JobRecord`, `StageTransition`, `postgres_schema_version`
+
+### Context
+
+Before module 16 the pipeline existed only inside `scripts/build_causal_graph.py`: a
+function that printed `[4/9]` as it went and returned `None` when anything refused, imported
+by three sibling scripts. That shape works for a command somebody watches and fails for
+everything an API needs — there is no stage identity to report progress against, no way to
+resume after a restart, no per-stage timing (a prd.md §55 obligation), and a refusal
+anywhere ends the whole run even when later stages had no dependency on it.
+
+OQ-014 additionally blocks on this: `scripts/check_determinism.py` exits 2 `NOT-YET-RUNNABLE`
+because no orchestration entry point exists, and its CI job carries `continue-on-error` for
+that reason alone.
+
+### Options considered
+
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Keep the script; have the API shell out to it | Rejected. No stage identity, no resumption, and the API would parse stdout for progress. |
+| B | Job state in Redis | Rejected. ADR-0001 confines Redis to recomputable values, and losing a stage ledger changes an answer: a resumed job would re-run stages that already committed facts, or skip stages that never did. |
+| C | A task queue (Celery/RQ) | Rejected for V1. A new dependency, a new service, and a new source of nondeterminism the §11 seeding contract would have to cover — to solve a problem one table solves. |
+| D | **Declared stages as data, with a Postgres append-only stage ledger behind a `JobStore` port** | **Chosen.** |
+
+### Decision
+
+The pipeline is a tuple of `Stage` values in `causalog.orchestration.stages`, each declaring
+`stage_id`, `requires`, an optional prd.md §55 `budget`, and a body. Fifteen are declared;
+twelve run. **Modules 7, 8 and 15 are declared with `NOT_RUNNABLE` and a reason naming the
+module**, never omitted — an omitted stage is indistinguishable from a stage that ran and
+found nothing, which is the exit-2 `NOT-YET-RUNNABLE` convention every `scripts/check_*.py`
+already uses.
+
+Migration 0017 adds `pipeline_job`, `pipeline_stage` and `idempotency_record`.
+`pipeline_stage` is **append-only** at the database (0004's `causalog_refuse_mutation()`):
+rows are TRANSITIONS, and the current status is the newest one, derived rather than stored.
+A mutable status column would let a retry overwrite the failure it retried, and a retry that
+leaves no trace is what a job ledger exists to prevent. `pipeline_job` carries the derived
+roll-up and is mutable, because its history is fully reconstructible from the transitions.
+`postgres_schema_version` moves to `1.1.0`.
+
+**Failure isolation:** a refusing stage is `FAILED`, its transitive dependents are `BLOCKED`
+naming the prerequisite, and every independent stage still runs. The execution ends
+`PARTIAL`, which is **not** a synonym for `FAILED` — reporting six-of-nine completed stages
+as failed discards work that is on disk and valid. `FAILED` is reserved for an execution
+where nothing succeeded, where "partial" would be a euphemism. `NOT_RUNNABLE` stages are
+excluded from the roll-up entirely, or every execution in this repository would be
+permanently `PARTIAL`, saying something about the repository while pretending to say
+something about the execution.
+
+### Consequences
+
+**Positive:** Progress, per-stage timing and resumption become properties a client can
+poll. The pipeline is inspectable without running it — a test asserts the dependency graph
+is acyclic and that every `requires` names a declared stage. The repository gains an
+orchestration entry point for the first time, which is OQ-014's remaining blocker. Module 6
+is now run by the pipeline; `build_causal_graph.py` silently skipped it.
+
+**Negative:** Resumption does **not** carry `PipelineState` across a restart — artifacts
+live in memory, so a resumed execution replays the stages that produced the inputs its
+remaining stages need. It saves the work of stages whose outputs nothing further needs, and
+not the work of stages whose outputs do. Closing that means persisting intermediate
+artifacts, which OQ-020 already tracks for a different reason. The in-process worker also
+ties an execution to one process: killing the API mid-run leaves the ledger showing
+`RUNNING` until something resumes it.
+
+**Obligations created:** migration 0017 and its reverse; `docs/api.md` documents the job
+lifecycle; `scripts/build_causal_graph.py` and its three siblings remain the CLI path and
+are now a second copy of stage wiring — tracked as OQ-034.
+
+### Reversibility cost
+
+**Medium.** The ledger is additive, but the API's job endpoints assume it.
+
+---
+
+## ADR-0084 — Idempotency keys and rate limits live at the API boundary
+
+- **Date:** 2026-09-20
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 16 Visualization API
+- **Affects interfaces:** `RateLimiter`, `idempotency_record`
+
+### Context
+
+prd.md §54 requires standard hardening. Two of its parts interact with correctness rather
+than only with availability: a retried `POST /v1/jobs` must not start two executions of the
+same request, and one caller must not be able to exhaust the engine for everybody else —
+module 14 simulates once per candidate and again per multi-node set, so a loop over the
+simulation endpoint is the cheapest way to push every other caller past the §55 budgets.
+
+### Decision
+
+**Idempotency is enforced by the database.** Migration 0017 puts a partial UNIQUE index on
+`pipeline_job.idempotency_key`; a repeated key returns the original execution. A
+read-then-write check in the handler would race two concurrent retries into two executions,
+which is the one failure idempotency exists to prevent. `idempotency_record` covers mutating
+calls that start no execution, keyed by (key, endpoint, actor) so one caller's key cannot
+return another's body, and storing a `request_digest` so that reusing a key with a
+**different** body is refused rather than served the earlier response.
+
+**Rate limiting is a separate port** from `DerivedCache`, though Redis serves both. The
+cache is run-scoped and may be flushed at any instant without changing an answer
+(`docs/architecture.md` §3.2 point 5); limiter state is caller-scoped and flushing it
+changes who gets through. Two lifetimes, two guarantees — the same reasoning that gave
+`BulkFactWriter` its own port rather than widening `FactRepository`.
+
+The limiter **fails open**: if Redis is unreachable the verdict is `allowed`. That is the
+correct direction for an availability control — a limiter outage must not become a total
+outage — and it is precisely why authorization is not built on this port. A control that
+fails open must never stand between a caller and data.
+
+Limiting happens **after** authorization, deliberately: limiting first would let an
+unauthorized caller consume an authorized caller's budget, and would leak the existence of
+endpoints through 429-versus-403.
+
+### Consequences
+
+**Positive:** A retried job request is safe. One caller cannot starve the engine. The
+asymmetry between the two controls is explicit rather than incidental.
+
+**Negative:** The limiter is a fixed window, so it admits a documented burst of up to twice
+the limit across a window boundary. A sliding window removes that and costs a sorted set per
+caller plus a trim per request; this limiter exists to stop one caller exhausting a shared
+engine, not to meter a paid API, and the burst is bounded and harmless for that. The cost is
+recorded so that a later requirement for exact metering reopens the decision rather than
+discovering it. Limits are also global per capability class rather than per role, which will
+be wrong for the first deployment that has a batch client.
+
+### Reversibility cost
+
+**Low.** Both are boundary concerns and neither is named by a reasoning module.
+
+---
+
+## ADR-0085 — `api_schema_version` 1.0.0 freezes the API SHELL; payload bodies stay draft
+
+- **Date:** 2026-09-20
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 16 Visualization API
+- **Affects interfaces:** HTTP API (prd.md §53)
+
+### Context
+
+The frontend needs a contract it can build against. `CONTEXT.md` §6 records the HTTP API row
+as `draft` and states the rule that governs freezing it: "A row owned by a module that does
+not yet exist stays `draft`. Freezing a type nobody has built would be the
+assertion-not-specification error OQ-009 existed to prevent, in a new place."
+
+Every reasoning artifact this API serializes is `draft` — `PromotedGraph`,
+`RootCauseRanking`, `PropagationReport`, `SimulatedWorld`, `Recommendation`, `Explanation` —
+and three of their owning modules (7, 8, 15) do not exist. ADR-0025 froze the canonical core
+early and its own negative consequences record the cost of freezing against anticipated
+rather than observed use.
+
+### Options considered
+
+| Option | Description | Why rejected / chosen |
+|---|---|---|
+| A | Freeze the whole contract, bodies included | Rejected. It asserts stability for artifacts whose owning modules do not exist — OQ-009's error, in the place a client would be most damaged by it. |
+| B | Leave everything `draft` | Rejected. The frontend then has nothing stable to build against, and the envelope guarantee — the point of this work — would be revocable. |
+| C | **Freeze the shell; version the bodies with their owning modules** | **Chosen.** |
+
+### Decision
+
+`api_schema_version` is `1.0.0` and **frozen**. It covers: the route set and their methods
+and status codes; `ApiResponse` and `ResponseScope`; the error taxonomy and its
+status mapping; pagination; the authentication and role contract; idempotency; and the job
+and stage shapes. Changing any of those requires an ADR and a coordinated update of every
+consumer.
+
+It explicitly does **not** cover payload bodies. Those remain `draft` and are versioned by
+their owning modules' existing schema versions. Bodies rendered through
+`core.serialization.canonical_form` are marked `draft` per endpoint in `docs/api.md`, and
+the fields a client may rely on are exactly the hand-written views in
+`orchestration.views` — which are frozen with the shell.
+
+`docs/openapi.json` is generated from the application by `scripts/export_openapi.py` and
+drift-checked in `make laws` and CI, so the published contract cannot disagree with the
+code.
+
+### Consequences
+
+**Positive:** The frontend gets a stable envelope, error vocabulary, auth model and route
+set today, without this repository asserting stability for artifacts it has not finished
+building. The freeze is against observed use — every frozen element has a consumer in
+`tests/api/`.
+
+**Negative:** A client cannot tell from the version number alone whether a body it depends
+on is stable; it must read `docs/api.md` per endpoint, which is exactly the kind of
+documentation people skip. The split also means a body change that breaks clients can ship
+without an `api_schema_version` bump — honest, but it will surprise someone, and the
+mitigation is only that the owning module's own schema version moves.
+
+**Obligations created:** `docs/api.md` marks every `draft` body; `CONTEXT.md` §6 and §7
+record the split; the OpenAPI drift check runs in CI.
+
+### Reversibility cost
+
+**Low** to freeze more later; **high** to unfreeze, which is the point of a freeze.
+
+---
+
+## ADR-0087 — OQ-027 and OQ-031 are closed at the API: a plateau is a set, a simulation is a type
+
+- **Date:** 2026-09-20
+- **Status:** accepted
+- **Supersedes:** —
+- **Affects modules:** 16 Visualization API
+- **Affects interfaces:** `PlateauGroupView`, `SimulatedEventView`, `RootCauseView`
+
+### Context
+
+Two open questions were explicitly assigned to module 16 and could not close without it.
+
+**OQ-027.** 310 scored links sit at exactly 0.400000, so under `weakest_link_v1` many chains
+compose identically and the recommended set is frequently unsequenceable. Modules 11 and 12
+say so; the API had no stated behaviour for it. An interface that renders a tie as a ranked
+list makes the engine appear to have chosen, which is the one thing the plateau notice
+exists to deny.
+
+**OQ-031.** prd.md §51 Workspace 5 asks for no simulated-versus-observed distinction, while
+§37 requires it "in the implementation or the user interface". Module 13 already holds the
+distinction structurally — a `SimulatedWorld` contains no `Event` and no `TimeInterval`
+(ADR-0068) — but nothing carried that onto the wire.
+
+### Decision
+
+**OQ-027.** `RootCauseView.recommended_groups` is a tuple of `PlateauGroupView`, not of
+causes. A group carries `tied: bool` and, when tied, a required `plateau_notice`. Members
+within a group are sequenced by `event_id` purely so the response is byte-identical across
+runs; that sequence carries no ranking and `docs/api.md` says so. The tie is **not** broken
+on earliness, which would reintroduce ADR-0008's forbidden blend through the back door.
+`tied` is a required field rather than something a client infers from equal scores, because
+a client comparing floats would break the tie itself.
+
+**OQ-031.** `SimulatedEventView` is a separate type from `EventView` with different fields
+and a different response key, and it deliberately has **no `occurred_at`** — a simulated
+instant is a `core.perturbation.SimulatedInstant`, not a `TimeInterval`, and giving this view
+the observed field name would undo ADR-0068 at the last hop. Its `provenance_class` is
+constrained to `SIMULATED`. A client cannot deserialize one into the other and an interface
+cannot render them identically by accident. §37 governs and §51 is treated as
+underspecified.
+
+A third decision travels with these because it is the same failure: **an empty result states
+why it is empty.** `GraphSubgraphView.empty_because` and `RootCauseView.empty_because`
+distinguish "claims were made and all were refused" (with the count) from "nothing was ever
+proposed" from "the seed is isolated". On this dataset the promoted graph is empty because
+3,814 claims were refused, and an empty `edges` list without that reason reads as "this
+causes nothing" — inviting exactly the wrong reading of a correct result.
+
+### Consequences
+
+**Positive:** Both questions close with mechanisms rather than with guidance. A tie is
+unrepresentable as a ranking; a simulation is unrepresentable as an observation; an empty
+result cannot travel without its reason.
+
+**Negative:** `recommended_groups` is a more awkward shape than a flat list, and every client
+must handle the grouping even when nothing ties. `empty_because` is prose, so it is neither
+machine-readable nor translatable — a client that wants to branch on WHY a result is empty
+has to parse English or fall back to `rejected_claim_count`. A structured reason code would
+be better and is deferred rather than pretended: tracked as OQ-035.
+
+**Obligations created:** OQ-027 and OQ-031 move to resolved in `CONTEXT.md` §8; OQ-035
+opened; `docs/api.md` documents the unsequenced-set contract.
+
+### Reversibility cost
+
+**Low.** All three are additive response shapes.

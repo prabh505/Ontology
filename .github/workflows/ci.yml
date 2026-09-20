@@ -172,6 +172,25 @@ jobs:
         with: {python-version: "3.12"}
       - run: python scripts/check_projection_drift.py --self-test
 
+  openapi:
+    # The published OpenAPI document is generated from the application's own route table and
+    # response models, which are normative (ADR-0085). A hand-written contract beside a code
+    # implementation is two descriptions of one thing, free to disagree, and the
+    # disagreement surfaces as a client the document says is correct and the server rejects.
+    # This job is what stops them drifting. The self-test runs first, as every check in this
+    # repository does: a check observed only to pass has not been observed to work
+    # (DEF-0001).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install the distribution
+        run: pip install -e backend
+      - name: Self-test the export
+        run: python scripts/export_openapi.py --self-test
+      - run: python scripts/export_openapi.py --check
+
   ontology-schema:
     # The published JSON Schema is generated from the pydantic models in
     # `causalog.ontology_runtime.dsl`, which are normative (ADR-0026). Two descriptions of

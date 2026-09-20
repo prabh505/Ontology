@@ -19,30 +19,18 @@ absence, and deliberately not an empty object, which would read as "it was empty
 from __future__ import annotations
 
 import json
-from typing import Final
 
 from causalog.core.errors import ContractViolationError
+from causalog.core.ports.persistence import AUDITABLE_ACTIONS
 from causalog.persistence.postgres import sql
 from causalog.persistence.postgres.connection import PostgresConnectionFactory
 
 __all__ = ["AUDITABLE_ACTIONS", "PostgresAuditSink"]
 
-#: The closed action list of `CONVENTIONS.md` §8. Closed rather than free text so a reader
-#: can filter the trail without parsing prose, and so a new auditable action is a
-#: deliberate addition here rather than a string someone invented at a call site.
-AUDITABLE_ACTIONS: Final[frozenset[str]] = frozenset(
-    {
-        "DATASET_IMPORTED",
-        "ONTOLOGY_CHANGED",
-        "RULE_SET_CHANGED",
-        "CAUSAL_EDGE_INFERRED",
-        "RECOMMENDATION_PRODUCED",
-        "COUNTERFACTUAL_RUN",
-        "INFERENCE_ENDPOINT_ACCESSED",
-        "STATE_RETRACTED",
-        "PROJECTION_REBUILT",
-    }
-)
+# `AUDITABLE_ACTIONS` moved to `causalog.core.ports.persistence` with module 16 and is
+# re-exported here so that no caller or test moved. It belongs beside the port because the
+# in-memory fake must refuse exactly what this adapter refuses; while it lived here, the
+# fake refused nothing and every audit unit test proved less than it read as.
 
 
 class PostgresAuditSink:

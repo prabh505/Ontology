@@ -19,6 +19,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from causalog.core.errors import ContractViolationError, LawViolationError, ProjectionStaleError
+from causalog.core.ports.jobs import JobRecord, JobStatus, StageStatus, StageTransition
+from causalog.core.ports.limits import RateLimitVerdict
+from causalog.core.ports.persistence import AUDITABLE_ACTIONS
 from causalog.core.provenance import ProvenanceClass
 from causalog.core.run import Run, RunKey
 from causalog.core.types import (
@@ -33,10 +36,13 @@ from causalog.core.types import (
 )
 
 __all__ = [
+    "FixedClock",
     "InMemoryAuditSink",
     "InMemoryDerivedCache",
     "InMemoryFactRepository",
     "InMemoryGraphProjection",
+    "InMemoryJobStore",
+    "InMemoryRateLimiter",
 ]
 
 #: A closed system period. The real schema uses `'infinity'`; datetime.max is its Python
@@ -602,6 +608,17 @@ class InMemoryAuditSink:
         payload: tuple[tuple[str, str], ...] = (),
     ) -> None:
         """Append one entry. There is deliberately no method that removes one."""
+        # The PostgreSQL sink refuses an action outside the closed list; until module 16
+        # this fake did not, so every audit unit test written against it proved less than
+        # it read as. This file's own docstring ("every law the real adapter enforces is
+        # enforced here too, with the same message") was false about exactly this law.
+        if action not in AUDITABLE_ACTIONS:
+            raise ContractViolationError(
+                f"{action!r} is not in the closed auditable-action list "
+                f"({sorted(AUDITABLE_ACTIONS)}). An audit trail whose vocabulary anyone "
+                "may extend at a call site cannot be filtered or reconciled "
+                "(CONVENTIONS.md §8)."
+            )
         if not actor.strip():
             raise ContractViolationError(
                 "An audit entry with no actor cannot discharge prd.md §54: it records "
@@ -627,3 +644,192 @@ class InMemoryAuditSink:
                 "payload": payload,
             }
         )
+
+
+@dataclass
+class InMemoryJobStore:
+    """The execution ledger in dicts. Transitions are appended and never revised.
+
+    Deliberately mirrors the database's asymmetry rather than smoothing it: the roll-up in
+    `_jobs` is mutable, the transitions in `_transitions` are not, and there is no method
+    here that removes or rewrites a transition. A fake that allowed one would let a test
+    pass that the 0004 trigger would reject in integration -- the slowest place to find it.
+    """
+
+    _jobs: dict[str, JobRecord] = field(default_factory=dict)
+    _transitions: list[StageTransition] = field(default_factory=list)
+    _responses: dict[tuple[str, str, str], tuple[str, int, str]] = field(default_factory=dict)
+
+    def create_job(self, record: JobRecord) -> None:
+        """Append a new execution, refusing a duplicate `execution_id`."""
+        if record.execution_id in self._jobs:
+            raise ContractViolationError(
+                f"An execution already exists with execution_id "
+                f"{record.execution_id!r}. An execution identifier is minted once per "
+                "attempt and never reused; reusing one would merge two attempts' stage "
+                "histories into a ledger that describes neither (ADR-0083)."
+            )
+        self._jobs[record.execution_id] = record
+
+    def job(self, execution_id: str) -> JobRecord | None:
+        """Return one execution, or None when no execution has that identifier."""
+        return self._jobs.get(execution_id)
+
+    def jobs(self, *, limit: int, dataset_id: str | None = None) -> Iterator[JobRecord]:
+        """Yield executions newest first, at most `limit`, optionally one dataset's.
+
+        Sequenced by an explicit `sorted()` on `(created_at, execution_id)`, never by
+        insertion: `execution_id` is the tie-break that makes the sequence total, matching
+        `SELECT_PIPELINE_JOBS`. Without it two executions created in one clock tick would
+        page non-deterministically here and deterministically in PostgreSQL.
+        """
+        candidates = [
+            record
+            for record in self._jobs.values()
+            if dataset_id is None or record.dataset_id == dataset_id
+        ]
+        ranked = sorted(
+            candidates, key=lambda record: (record.created_at, record.execution_id), reverse=True
+        )
+        yield from ranked[:limit]
+
+    def job_for_idempotency_key(self, key: str) -> JobRecord | None:
+        """Return the execution a previous request with this key created, if any."""
+        for record in sorted(self._jobs.values(), key=lambda item: item.execution_id):
+            if record.idempotency_key == key:
+                return record
+        return None
+
+    def set_status(
+        self, execution_id: str, status: JobStatus, *, run_id: str | None, at: datetime
+    ) -> None:
+        """Record an execution's current status, and its `run_id` once one is known."""
+        existing = self._jobs.get(execution_id)
+        if existing is None:
+            raise ContractViolationError(
+                f"No execution {execution_id!r} to set status on. A status recorded "
+                "against an execution that was never created would leave the ledger "
+                "describing an attempt with no beginning."
+            )
+        # `run_id or existing.run_id`, matching the adapter's COALESCE: a run is learned
+        # once and never unlearned by a later status update.
+        self._jobs[execution_id] = existing.model_copy(
+            update={
+                "status": status,
+                "run_id": run_id or existing.run_id,
+                "updated_at": at,
+            }
+        )
+
+    def append_transition(self, transition: StageTransition) -> None:
+        """Append one stage transition. Never updates and never deletes."""
+        if transition.execution_id not in self._jobs:
+            raise ContractViolationError(
+                f"Stage {transition.stage_id!r} names execution "
+                f"{transition.execution_id!r}, which does not exist. The foreign key in "
+                "migration 0017 refuses the same thing."
+            )
+        if transition.status in _EXPLAINED_STAGE_STATUSES and not (transition.detail or "").strip():
+            raise ContractViolationError(
+                f"Stage {transition.stage_id!r} reached {transition.status.value} with no "
+                "detail. A non-successful terminal status that does not say why is an "
+                "incident nobody can diagnose from the ledger, which is the only thing "
+                "that survives the container (migration 0017)."
+            )
+        self._transitions.append(transition)
+
+    def transitions(self, execution_id: str) -> Iterator[StageTransition]:
+        """Yield every transition for an execution, oldest first."""
+        yield from (
+            transition
+            for transition in self._transitions
+            if transition.execution_id == execution_id
+        )
+
+    def remember_response(
+        self,
+        *,
+        idempotency_key: str,
+        endpoint: str,
+        actor: str,
+        request_digest: str,
+        response_status: int,
+        response_body: str,
+        correlation_id: str | None = None,
+    ) -> None:
+        """Store what a mutating request already returned, so a retry replays it."""
+        del correlation_id  # recorded by the adapter; not read back by any caller
+        self._responses.setdefault(
+            (idempotency_key, endpoint, actor),
+            (request_digest, response_status, response_body),
+        )
+
+    def remembered_response(
+        self, *, idempotency_key: str, endpoint: str, actor: str
+    ) -> tuple[str, int, str] | None:
+        """Return `(request_digest, status, body)` a key already produced, or None."""
+        return self._responses.get((idempotency_key, endpoint, actor))
+
+
+#: The stage statuses migration 0017 requires a `detail` for. Held beside the fake so the
+#: constraint is one list rather than two that can drift.
+_EXPLAINED_STAGE_STATUSES = frozenset(
+    {StageStatus.FAILED, StageStatus.BLOCKED, StageStatus.NOT_RUNNABLE}
+)
+
+
+@dataclass
+class InMemoryRateLimiter:
+    """A fixed-window counter in a dict, with the same window arithmetic as Redis.
+
+    It does NOT fail open, because it cannot fail: there is no transport to lose. The
+    Redis adapter's open failure is a property of its dependency, not of the port, so
+    reproducing it here would make a test pass for a reason the real limiter would not
+    supply.
+    """
+
+    _counts: dict[tuple[str, int], int] = field(default_factory=dict)
+
+    def consume(self, *, bucket: str, limit: int, window_seconds: int) -> RateLimitVerdict:
+        """Spend one unit of `bucket`'s budget and report what remains."""
+        if limit <= 0 or window_seconds <= 0:
+            raise ContractViolationError(
+                f"A rate limit needs a positive budget and window; got limit={limit}, "
+                f"window_seconds={window_seconds}. A non-positive budget refuses every "
+                "request, which is a misconfiguration that would read as an outage."
+            )
+        key = (bucket, window_seconds)
+        used = self._counts.get(key, 0) + 1
+        self._counts[key] = used
+        return RateLimitVerdict(
+            allowed=used <= limit,
+            limit=limit,
+            remaining=max(0, limit - used),
+            retry_after_seconds=0 if used <= limit else window_seconds,
+        )
+
+
+@dataclass
+class FixedClock:
+    """A `Clock` a test controls (ADR-0014).
+
+    Time is a port precisely so that this can exist: an expiry check, a stage timestamp and
+    a run's `created_at` are all testable only when the instant is chosen rather than
+    observed. `advance` moves it; nothing here ever reads the ambient clock, which is the
+    whole reason the port is not `datetime.now`.
+
+    The default instant is a real, fixed, timezone-aware UTC value rather than `now()`.
+    A fake seeded from the wall clock would make a test that formats an instant pass today
+    and fail on the day the formatting changes length.
+    """
+
+    instant: datetime = datetime(2026, 1, 1, tzinfo=UTC)
+
+    def now_utc(self) -> datetime:
+        """Return the currently configured instant."""
+        return self.instant
+
+    def advance(self, seconds: float) -> datetime:
+        """Move the clock forward and return the new instant."""
+        self.instant = self.instant + timedelta(seconds=seconds)
+        return self.instant

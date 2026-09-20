@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Final
 
 __all__ = [
+    "APPEND_PIPELINE_STAGE",
     "COUNT_FACTS_FOR_DATASET",
     "DELETE_NOTHING",
     "INSERT_AUDIT_ENTRY",
@@ -31,6 +32,8 @@ __all__ = [
     "INSERT_ENTITY",
     "INSERT_EVENT",
     "INSERT_EVIDENCE_RECORD",
+    "INSERT_IDEMPOTENCY_RECORD",
+    "INSERT_PIPELINE_JOB",
     "INSERT_RUN",
     "INSERT_STATE",
     "RETRACT_STATES",
@@ -38,11 +41,18 @@ __all__ = [
     "SELECT_ENTITIES_FOR_DATASET",
     "SELECT_EVENTS_FOR_DATASET",
     "SELECT_EVENTS_FOR_ENTITY",
+    "SELECT_IDEMPOTENCY_RECORD",
+    "SELECT_PIPELINE_JOB",
+    "SELECT_PIPELINE_JOBS",
+    "SELECT_PIPELINE_JOBS_FOR_DATASET",
+    "SELECT_PIPELINE_JOB_BY_IDEMPOTENCY_KEY",
+    "SELECT_PIPELINE_STAGES",
     "SELECT_RELATIONSHIPS_FOR_DATASET",
     "SELECT_RUN",
     "SELECT_STATES_AS_BELIEVED_AT",
     "SELECT_STATES_FOR_DATASET",
     "SELECT_TRANSITIONS_FOR_DATASET",
+    "UPDATE_PIPELINE_JOB_STATUS",
 ]
 
 # ---------------------------------------------------------------------------
@@ -357,6 +367,99 @@ INSERT_AUDIT_ENTRY: Final[str] = """
 INSERT INTO audit_log (run_id, auditable_event, action, target, target_kind, actor,
                        correlation_id, execution_id, before_state, after_state, payload)
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+"""
+
+# ---------------------------------------------------------------------------
+# The execution ledger (migration 0017, ADR-0083)
+# ---------------------------------------------------------------------------
+
+#: `pipeline_job` is the one table in this file that is updated rather than appended to.
+#: It carries a derived roll-up whose history is fully reconstructible from
+#: `pipeline_stage`, so letting it change loses nothing -- see 0017's header.
+INSERT_PIPELINE_JOB: Final[str] = """
+INSERT INTO pipeline_job (execution_id, run_id, dataset_id, status, requested_by,
+                          correlation_id, idempotency_key, created_at, updated_at)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (execution_id) DO NOTHING
+"""
+
+#: `COALESCE` rather than a plain assignment: a status update that arrives before the
+#: packs resolve must not erase a `run_id` a later stage already recorded. The run is
+#: learned once and never unlearned.
+UPDATE_PIPELINE_JOB_STATUS: Final[str] = """
+UPDATE pipeline_job
+   SET status = %s,
+       run_id = COALESCE(%s, run_id),
+       updated_at = %s
+ WHERE execution_id = %s
+"""
+
+#: The four statements below repeat their column list rather than interpolating a shared
+#: constant. This file's own header says the column sequence IS the contract with
+#: `rows.py`; an f-string moves that contract out of view of the statement it governs, and
+#: it makes every one of these read as a constructed query to the bandit rule that exists
+#: to catch constructed queries. Repetition is the cheaper of the two costs.
+SELECT_PIPELINE_JOB: Final[str] = """
+SELECT execution_id, run_id, dataset_id, status, requested_by,
+       correlation_id, idempotency_key, created_at, updated_at
+  FROM pipeline_job
+ WHERE execution_id = %s
+"""
+
+SELECT_PIPELINE_JOB_BY_IDEMPOTENCY_KEY: Final[str] = """
+SELECT execution_id, run_id, dataset_id, status, requested_by,
+       correlation_id, idempotency_key, created_at, updated_at
+  FROM pipeline_job
+ WHERE idempotency_key = %s
+"""
+
+#: `execution_id` is the tie-break so the sequence is TOTAL. Two executions created in the
+#: same clock tick would otherwise page non-deterministically -- a row repeated on one page
+#: and dropped from the next, which is the classic unsequenced-pagination defect
+#: (`CONVENTIONS.md` §11 requires an explicit sequence on a unique key).
+SELECT_PIPELINE_JOBS: Final[str] = """
+SELECT execution_id, run_id, dataset_id, status, requested_by,
+       correlation_id, idempotency_key, created_at, updated_at
+  FROM pipeline_job
+ ORDER BY created_at DESC, execution_id DESC
+ LIMIT %s
+"""
+
+SELECT_PIPELINE_JOBS_FOR_DATASET: Final[str] = """
+SELECT execution_id, run_id, dataset_id, status, requested_by,
+       correlation_id, idempotency_key, created_at, updated_at
+  FROM pipeline_job
+ WHERE dataset_id = %s
+ ORDER BY created_at DESC, execution_id DESC
+ LIMIT %s
+"""
+
+APPEND_PIPELINE_STAGE: Final[str] = """
+INSERT INTO pipeline_stage (execution_id, stage_id, status, recorded_at,
+                            elapsed_seconds, error_code, detail)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
+"""
+
+#: Oldest first, because the sequence IS the history: resumption folds over it, and a
+#: reversed fold would report the FIRST transition as the current status.
+SELECT_PIPELINE_STAGES: Final[str] = """
+SELECT execution_id, stage_id, status, recorded_at, elapsed_seconds, error_code, detail
+  FROM pipeline_stage
+ WHERE execution_id = %s
+ ORDER BY transition_id
+"""
+
+INSERT_IDEMPOTENCY_RECORD: Final[str] = """
+INSERT INTO idempotency_record (idempotency_key, endpoint, actor, request_digest,
+                                response_status, response_body, correlation_id)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (idempotency_key, endpoint, actor) DO NOTHING
+"""
+
+SELECT_IDEMPOTENCY_RECORD: Final[str] = """
+SELECT request_digest, response_status, response_body
+  FROM idempotency_record
+ WHERE idempotency_key = %s AND endpoint = %s AND actor = %s
 """
 
 # ---------------------------------------------------------------------------

@@ -35,16 +35,21 @@ _EXPECTED_MARKER = {
     # Added 2026-08-29 with the persistence layer.
     "check_migration_pairs": (0, "SELF-TEST:"),
     "check_projection_drift": (0, "SELF-TEST:"),
-    # `check_determinism.py` is the one enforcement script with no self-test, and that is
-    # its honest state rather than an omission: the gate cannot run at all until an
-    # orchestration pipeline exists (OQ-014), so there is no behaviour to prove. It exits
-    # 2 -- NOT-YET-RUNNABLE, the repository's established code for "this check could not
-    # run", deliberately distinct from 0 so a missing gate never looks like a passing one.
+    # `check_determinism.py` had no self-test until 2026-09-20, because the gate could not
+    # run at all until an orchestration pipeline existed (OQ-014) and there was no behaviour
+    # to prove. The exemption above carried a standing instruction: it "will fail here the
+    # day the pipeline lands and the banner stops being true -- which is the point at which
+    # somebody must decide what its self-test proves."
     #
-    # Asserting BOTH the code and the banner is what stops the exemption becoming a hole,
-    # and it is what will fail here the day the pipeline lands and the banner stops being
-    # true -- which is the point at which somebody must decide what its self-test proves.
-    "check_determinism": (2, "NOT-YET-RUNNABLE"),
+    # ADR-0083 landed the entry point, this test fired exactly as designed, and the decision
+    # is made: the script now proves its COMPARISON -- identical trees agree, a changed
+    # artifact and a changed file set are caught, every volatile field is blanked, and
+    # `run_id` is NOT blanked (it is the value determinism is asserted against). So the
+    # exemption is gone and it is held to the same standard as every other script.
+    #
+    # Note the banner also changed meaning: exit 2 was NOT-YET-RUNNABLE, "no entry point
+    # exists". It is now NOT-RUNNABLE, "the entry point exists, was executed, and refused
+    # for want of a materialized dataset". Different states, deliberately different words.
 }
 
 

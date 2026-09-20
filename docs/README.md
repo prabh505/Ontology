@@ -16,6 +16,15 @@ contracts.md        the frozen public interface of causalog.core, v1.3.0 — eve
                     and 4 USE Event, ADR-0039 / ADR-0041)
 ontology.md         the domain pack schema, what the loader checks and what it cannot,
                     and the numbered checklist for onboarding a new domain (ADR-0026)
+api.md              the HTTP contract, frozen at api_schema_version 1.0.0 (ADR-0085):
+                    the route set and the prd.md §53 mapping, the response envelope, the
+                    error taxonomy, the permission matrix rendered from the code, the
+                    §55 budgets with the two that are measured-not-enforced named, and
+                    the known limits. Its machine-readable form is `openapi.json`
+openapi.json        GENERATED from the application by `scripts/export_openapi.py`, never
+                    hand-edited, and drift-checked in `make laws` and CI. A hand-written
+                    contract beside a code implementation is two descriptions of one
+                    thing, free to disagree
 data-model.md       the bi-temporal PostgreSQL schema and the Neo4j projection: ER and
                     graph diagrams, every index with its justifying query, and the
                     indexes deliberately absent (ADR-0032 / ADR-0033 / ADR-0034)
@@ -27,10 +36,11 @@ reports/            NOT intent, and the one directory here that is neither inten
                     See its own README for how to read one.
 ```
 
-`contracts.md` and `ontology.md` are the exceptions to this directory's "intent, not state"
-rule, and deliberately so: they state what the core types and the domain pack schema *are*,
-which is neither intent nor current state but a commitment. It lives here because it is read alongside `architecture.md` when
-touching a module boundary, and it is versioned independently of both.
+`contracts.md`, `ontology.md` and `api.md` are the exceptions to this directory's "intent,
+not state" rule, and deliberately so: they state what the core types, the domain pack schema
+and the HTTP surface *are*, which is neither intent nor current state but a commitment.
+They live here because each is read alongside `architecture.md` when touching a module
+boundary, and each is versioned independently of it.
 
 There is deliberately **no `adr/` directory**. `DECISIONS.md` at the repository root is the
 canonical, append-only ADR log; a second copy on disk would be a divergence waiting to

@@ -30,6 +30,7 @@ dev = [
   "pytest==8.3.4",
   "pytest-cov==6.0.0",
   "hypothesis==6.165.10", # property-based tests for the canonical core (ADR-0024)
+  "httpx==0.28.1",        # the ASGI transport fastapi.testclient needs (ADR-0086)
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -85,6 +86,12 @@ ignore = [
 "tests/**" = ["S101", "D103", "ANN201", "ANN401", "T201"]
 "tests/**/__init__.py" = ["D104"]                 # the test mirror is structure, not prose
 "scripts/**" = ["T201"]                  # enforcement scripts report to stdout
+# T201: `orchestration/pipeline.py` is the one command-line entry point inside the
+#   distribution -- `scripts/check_determinism.py` executes it with `python -m`. A CLI
+#   reports to stdout and stderr; routing that through the structured logger would put
+#   the gate's own diagnostics into a log nobody is reading at the moment they matter.
+#   Scoped to the single module, so the rest of `src/` stays print-free.
+"src/causalog/orchestration/pipeline.py" = ["T201"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -125,7 +132,28 @@ markers = [
   "determinism: asserts byte-identical reruns",
   "slow: excluded from `make test-fast`",
 ]
-filterwarnings = ["error"]
+# A warning is an error, with exactly one exception, narrowed to its message so that it
+# cannot grow to cover a warning from our own code:
+#   * `starlette.testclient` -- reached through `fastapi.testclient` (ADR-0086) -- imports
+#     `anyio.abc.BlockingPortal`, an alias anyio has deprecated in favour of
+#     `anyio.from_thread.BlockingPortal`. The deprecation is in a dependency's import of
+#     another dependency; nothing in this repository can act on it, and the alternative to
+#     ignoring it is having no API contract suite at all. It is scoped to the message
+#     rather than to the category or the module, so the day starlette stops using the
+#     alias this entry stops matching anything and can be deleted.
+filterwarnings = [
+  "error",
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+  #   * `anyio`'s memory streams, which `starlette.testclient` uses for its in-process
+  #     transport, warn from `__del__` when the garbage collector reclaims them. Nothing in
+  #     this repository constructs one; every `TestClient` here is used as a context
+  #     manager and closed. Because the warning fires during collection it is attributed to
+  #     whichever test happens to be running, so under `filterwarnings = error` it turns
+  #     into a failure in an unrelated, non-deterministic place -- the subset that "fails"
+  #     passes in isolation. Scoped to the message so it cannot mask a ResourceWarning from
+  #     our own code, which would be a real leak worth failing on.
+  "ignore:Unclosed <MemoryObject:ResourceWarning",
+]
 
 [tool.coverage.run]
 branch = true

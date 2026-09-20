@@ -2402,10 +2402,9 @@ caveat module 10 states and adds no evidence of its own.
   path in V1 (`CONTEXT.md` §10).
 
 ## 16. Visualization API
-- **Status:** not-started · **Phase:** P5 · **Contract:** HTTP API (draft)
-- **Scope reminder:** provenance classes must survive serialization and be visually
-  distinct downstream (LAW-PROVENANCE). Every response carries the output envelope
-  (`CONVENTIONS.md` §11).
+- **Status:** **built-unverified** · **Phase:** P5 · **Contract:** HTTP API shell **frozen**
+  at `api_schema_version` 1.0.0 (ADR-0085); payload bodies remain `draft`
+- **Built:** 2026-09-20, with the L9 orchestration layer. Evidence in §00k below.
 
 ---
 
@@ -3367,3 +3366,167 @@ right**, and on this dataset it declines to make any.
 
 The `slow`-marked DB-backed tests, for R-17's reason. The recommendation budget test is
 `slow`-marked and WAS run (its figure is above); the compose-stack ones were not.
+
+
+---
+
+## 00k. Module 16, the Visualization API, and the L9 orchestration layer (2026-09-20)
+
+**ADRs:** 0080 (the response envelope) · 0081 (roles and the permission matrix; `api` and
+`orchestration` join the LAW-DOMAIN scan) · 0082 (identity is a `core` port) · 0083 (the
+pipeline as a resumable job with an append-only stage ledger) · 0084 (idempotency and rate
+limits) · 0085 (`api_schema_version` 1.0.0, shell frozen) · 0086 (`httpx`, dev-only) ·
+0087 (OQ-027 and OQ-031 closed at the API).
+
+**Closes:** OQ-027, OQ-031. **Substantially unblocks:** OQ-014. **Opens:** OQ-033
+(no administrator in prd.md), OQ-034 (stage wiring now exists twice), OQ-035
+(`empty_because` is prose).
+
+### What landed
+
+`causalog.orchestration` and `causalog.api` were both empty scaffolds. Before this commit
+the pipeline existed only inside `scripts/build_causal_graph.py` — a function that printed
+`[4/9]` and returned `None` when anything refused — and the API was a `/healthz` route whose
+own docstring said "it is **not** module 16".
+
+- **L9:** `wiring` (the one file importing `persistence`), `stages` (15 declared stages, 12
+  runnable), `jobs` (failure isolation, resumption, per-stage timing), `views` (the F5
+  translation seam), `facade` (the only surface L10 may call), `caching`, `audit`, `timing`,
+  `identity`, and `pipeline` (the `python -m` entry point the determinism gate executes).
+- **L10:** `ApiResponse`, the error taxonomy, pagination, `security/` (the permission matrix
+  as data), `dependencies`, `responses`, six route modules, `app`, `asgi`.
+- **Ports:** `core/ports/{identity,jobs,limits}.py`. **Migration 0017** and its reverse:
+  `pipeline_job`, the append-only `pipeline_stage`, `idempotency_record`.
+  `postgres_schema_version` → 1.1.0.
+
+### Evidence
+
+```
+$ make laws
+--- self-tests: every law check must be observed to reject, not just to pass
+self-test passed: identical trees agree, a changed artifact and a changed file set are
+  both caught, 4 volatile field(s) are blanked, and run_id is not.
+SELF-TEST PASSED: render is stable over 14 path(s), and a modified document is rejected.
+--- scans
+LAW-DOMAIN: clean across 253 file(s) in 11 package(s).
+LAYER BOUNDARIES: clean across 249 file(s).
+LAW-EVIDENCE: clean across 249 file(s); confidence is a vector everywhere.
+DEPENDENCY POLICY: clean; 15 pinned dependencies, all ADR-backed.
+GOVERNANCE CONSISTENCY: clean; 13 question(s) closed by an existing ADR, 22 still open.
+migration pairs: every forward migration has its exact reverse.
+OPENAPI: the published document matches the application.
+
+$ cd backend && mypy
+Success: no issues found in 249 source files
+
+$ cd backend && pytest --no-cov
+1590 passed, 98 skipped in 114.35s
+```
+
+**One pipeline execution, end to end** (synthetic 40-row dataset over the real DataCo pack,
+mapping and rule pack — the 95 MB source file is not in the repository):
+
+```
+JOB SUCCEEDED
+stage                status         seconds
+packs                SUCCEEDED      0.388
+run_identity         SUCCEEDED      0.003
+clean_layer          SUCCEEDED      0.005
+entities             SUCCEEDED      0.009
+events               SUCCEEDED      0.046
+timelines            SUCCEEDED      0.009
+states               SUCCEEDED      0.007
+relationships        NOT_RUNNABLE   —
+temporal_graph       NOT_RUNNABLE   —
+rule_evaluation      SUCCEEDED      0.041
+derivation_audit     SUCCEEDED      0.000
+candidates           SUCCEEDED      3.257
+scoring              SUCCEEDED      1.249
+causal_graph         SUCCEEDED      0.663
+explanations         NOT_RUNNABLE   —
+
+measurements: candidates 5,778 · entities 83 · events 353 · promoted_edges 0 ·
+              rejected_claims 3,814 · rule_firings 1,151 · scored_edges 3,814 ·
+              states 189 · timelines 91 · transitions 129
+```
+
+**Determinism, measured** — the same pipeline run twice, compared by
+`check_determinism.compare()` with its real normalization:
+
+```
+files compared: 9
+mismatches after normalization: 0
+VERDICT: two runs are byte-identical after excluding volatile fields
+```
+
+**prd.md §55 root-cause budget, through HTTP:**
+
+```
+prd.md §55 root-cause query over HTTP: 1.796s against a 3.0s budget.
+    NOTE: measured over a SYNTHETIC run of 40 rows. The committed bounded run is 150
+    rows of 180,519, so this is three orders of magnitude below the reference dataset
+    and is a measurement of an engine at this scale, not of the dataset (OQ-023).
+```
+
+### Stated failure modes, each with a test
+
+| Failure mode | Test |
+|---|---|
+| A route returns a body with no envelope | `tests/law/test_api_returns_no_body_without_envelope.py` (route table **and** AST, parametrized per source file, both observed to reject a planted violation) |
+| A response carries a confidence with no components | `tests/api/test_envelope_completeness.py` — recursive walk at every depth; the walk itself is observed to reject |
+| A role reaches an endpoint it does not hold | `tests/api/test_permission_matrix.py` — every role × every route, 114 cases |
+| A mutating call produces no audit record | `tests/api/test_audit_completeness.py` |
+| A **refused** read is recorded as an access | same file — a regression guard for a defect found during this build |
+| A production error leaks internals | `tests/api/test_errors_leak_nothing.py` — the detector is observed to reject a planted leak |
+| Two identical requests differ | `tests/determinism/test_api_responses_are_stable.py` — and the exclusions are asserted to genuinely vary |
+| An unbuilt module's endpoint returns a silent empty | `tests/api/test_not_runnable_and_empty.py` |
+| A stage failure aborts independent stages | `tests/unit/orchestration/test_pipeline_job.py` |
+| The published contract drifts from the code | `scripts/export_openapi.py --check` in `make laws` and CI |
+
+### Four defects found and fixed during this build
+
+Recorded rather than quietly repaired, per this repository's norm:
+
+1. **`AUDITABLE_ACTIONS` lived in the PostgreSQL sink.** The real adapter refused an unknown
+   action and the in-memory fake accepted anything, so every audit unit test written against
+   the fake proved less than it read as — and `persistence/memory/fakes.py`'s own docstring
+   ("every law the real adapter enforces is enforced here too, with the same message") was
+   false about exactly that law. Lifted to `core/ports/persistence.py`.
+2. **`FactRepository` did not match its own adapters.** The port declared
+   `retract_states(..., as_of: str)` and `states_as_believed_at(..., system_instant: str)`
+   while both implementations took `datetime`, and ADR-0032's `dataset_version` /
+   `believed_from` never reached the port's write side. `mypy --strict` had never said so
+   because **nothing in the distribution had ever assigned an adapter to the port type** —
+   the wiring layer that does it did not exist. The first line of `orchestration.wiring` to
+   name `FactRepository` surfaced it. The port was the outlier in both cases; no adapter
+   changed.
+3. **Two correlation ids per request.** The middleware minted one (echoed in
+   `X-Correlation-Id`) and the authorization dependency minted another (written to the audit
+   row), so `audit_log_by_correlation_idx` — whose justifying query is "everything one API
+   request did" — could not answer it. Found by a test comparing the audit row against the
+   response header.
+4. **A refused request was audited as a disclosure.** The diagnostic-standing check ran
+   *after* the audit was written, so an executive refused the disowned view was recorded as
+   having read it. A trail that claims disclosures which did not happen cannot be relied on
+   for the ones that did.
+
+A fifth, found by the repository's own test rather than by me: `stages.py` claimed the
+envelope's `execution_id` was "overwritten by `jobs.py` with the real execution id", and it
+never was. The symptom was misleading in the worst way — the determinism comparison passed
+*without needing* its `execution_id` exclusion, because the field was stable when it was
+supposed to be volatile.
+
+### What this does NOT establish
+
+- **The gate is not green in CI.** The DataCo source file is not in the repository, so no
+  clean layer exists there; `check_determinism.py` reports `NOT-RUNNABLE` and its CI job
+  keeps `continue-on-error`. Removing it now would make a job that cannot run look like one
+  that passes. OQ-014 stays open.
+- **No number here measures the dataset.** Every figure is over a synthetic 40-row slice.
+- **The promoted graph is empty**, as it is throughout this repository: 3,814 claims
+  proposed, none promoted. The API reports that with its reason rather than as an empty list.
+- **No endpoint has been exercised against PostgreSQL, Neo4j or Redis.** Every test runs
+  against the in-memory fakes.
+- **`tests/ui/` does not exist**, so nothing asserts the provenance classes are *visually*
+  distinct (R-11). The API keeps them structurally distinct; what an interface does with
+  that is unmeasured.

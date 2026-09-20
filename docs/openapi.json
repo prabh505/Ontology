@@ -1,0 +1,4120 @@
+{
+  "components": {
+    "schemas": {
+      "ApiResponse_GraphSubgraphView_": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/GraphSubgraphView"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[GraphSubgraphView]",
+        "type": "object"
+      },
+      "ApiResponse_JobView_": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/JobView"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[JobView]",
+        "type": "object"
+      },
+      "ApiResponse_OntologySummaryView_": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/OntologySummaryView"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[OntologySummaryView]",
+        "type": "object"
+      },
+      "ApiResponse_Page_EventView__": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/Page_EventView_"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[Page[EventView]]",
+        "type": "object"
+      },
+      "ApiResponse_RootCauseView_": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/RootCauseView"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[RootCauseView]",
+        "type": "object"
+      },
+      "ApiResponse_RulePackView_": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/RulePackView"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[RulePackView]",
+        "type": "object"
+      },
+      "ApiResponse_RunComparisonView_": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/RunComparisonView"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[RunComparisonView]",
+        "type": "object"
+      },
+      "ApiResponse_Union_RunView__NoneType__": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[Union[RunView, NoneType]]",
+        "type": "object"
+      },
+      "ApiResponse_Union_TimelineView__NoneType__": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimelineView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[Union[TimelineView, NoneType]]",
+        "type": "object"
+      },
+      "ApiResponse_dict_str__Any__": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[dict[str, Any]]",
+        "type": "object"
+      },
+      "ApiResponse_tuple_JobView__________": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/JobView"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[tuple[JobView, ...]]",
+        "type": "object"
+      },
+      "ApiResponse_tuple_RunView__________": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RunView"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[tuple[RunView, ...]]",
+        "type": "object"
+      },
+      "BudgetName": {
+        "description": "The five prd.md \u00a755 operations, as a closed vocabulary.",
+        "enum": [
+          "DATASET_LOADING",
+          "GRAPH_GENERATION",
+          "ROOT_CAUSE_QUERY",
+          "COUNTERFACTUAL_QUERY",
+          "RECOMMENDATION_GENERATION"
+        ],
+        "title": "BudgetName",
+        "type": "string"
+      },
+      "ConfidenceComponentView": {
+        "additionalProperties": false,
+        "description": "One named, inspectable component of a confidence number (LAW-EVIDENCE).",
+        "properties": {
+          "component_name": {
+            "minLength": 1,
+            "title": "Component Name",
+            "type": "string"
+          },
+          "evidence_record_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Record Ids",
+            "type": "array"
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          },
+          "value": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "component_name",
+          "value",
+          "provenance_class"
+        ],
+        "title": "ConfidenceComponentView",
+        "type": "object"
+      },
+      "ConfidenceView": {
+        "additionalProperties": false,
+        "description": "A confidence number that cannot exist without its decomposition.\n\n`components` carries `min_length=1`, so **the API is structurally incapable of\nreturning a bare float wearing a confidence's name**. LAW-EVIDENCE says a bare float is\na defect; this makes it an unconstructable one rather than something a test has to go\nlooking for. It is the same move ADR-0075 made for a recommendation's evidence, in the\nplace a client actually reads.\n\n`scalar` is derived and names the `aggregation` that produced it, exactly as\n`ConfidenceVector` does. A consumer that reads `scalar` and ignores `components` has\nbeen given everything it needs to know better.",
+        "properties": {
+          "aggregation": {
+            "minLength": 1,
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ConfidenceComponentView"
+            },
+            "minItems": 1,
+            "title": "Components",
+            "type": "array"
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          },
+          "scalar": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Scalar",
+            "type": "number"
+          }
+        },
+        "required": [
+          "scalar",
+          "aggregation",
+          "provenance_class",
+          "components"
+        ],
+        "title": "ConfidenceView",
+        "type": "object"
+      },
+      "EventView": {
+        "additionalProperties": false,
+        "description": "One OBSERVED-or-derived event. Distinct from `SimulatedEventView`, permanently.",
+        "properties": {
+          "confidence": {
+            "$ref": "#/components/schemas/ConfidenceView"
+          },
+          "event_id": {
+            "minLength": 1,
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "minLength": 1,
+            "title": "Event Type",
+            "type": "string"
+          },
+          "evidence_record_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Record Ids",
+            "type": "array"
+          },
+          "is_actionable": {
+            "title": "Is Actionable",
+            "type": "boolean"
+          },
+          "occurred_at": {
+            "$ref": "#/components/schemas/TimeIntervalView"
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          },
+          "source_entity_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Entity Ids",
+            "type": "array"
+          },
+          "target_entity_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Target Entity Ids",
+            "type": "array"
+          },
+          "trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_type",
+          "occurred_at",
+          "provenance_class",
+          "confidence",
+          "is_actionable"
+        ],
+        "title": "EventView",
+        "type": "object"
+      },
+      "EvidenceReference": {
+        "additionalProperties": false,
+        "description": "A citation resolving back to the record that justified an assertion.\n\nA reference, not the evidence itself: `CONVENTIONS.md` \u00a77 forbids any message or\npayload from carrying a raw source record, and `source_locator` names where the record\nis without reproducing what it says.",
+        "properties": {
+          "dataset_version": {
+            "minLength": 1,
+            "title": "Dataset Version",
+            "type": "string"
+          },
+          "evidence_record_id": {
+            "minLength": 1,
+            "title": "Evidence Record Id",
+            "type": "string"
+          },
+          "source_locator": {
+            "minLength": 1,
+            "title": "Source Locator",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_record_id",
+          "dataset_version",
+          "source_locator"
+        ],
+        "title": "EvidenceReference",
+        "type": "object"
+      },
+      "GraphEdgeView": {
+        "additionalProperties": false,
+        "description": "One edge of an extracted subgraph, carrying its confidence and its temporal verdict.\n\n`temporal_verdict` and `temporally_unverifiable` are separate fields and are both\ncarried. On the committed slice 79.3% of claims are stopped by the temporal verdict\nrather than by any threshold (R-22), so an edge payload that omitted the verdict would\nleave a client unable to tell a weak claim from an untimeable one -- which is the single\nmost common misreading this dataset invites.",
+        "properties": {
+          "causal_edge_id": {
+            "minLength": 1,
+            "title": "Causal Edge Id",
+            "type": "string"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/ConfidenceView"
+          },
+          "edge_kind": {
+            "minLength": 1,
+            "title": "Edge Kind",
+            "type": "string"
+          },
+          "propagation_weight": {
+            "title": "Propagation Weight",
+            "type": "number"
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          },
+          "source_event_id": {
+            "minLength": 1,
+            "title": "Source Event Id",
+            "type": "string"
+          },
+          "target_event_id": {
+            "minLength": 1,
+            "title": "Target Event Id",
+            "type": "string"
+          },
+          "temporal_verdict": {
+            "minLength": 1,
+            "title": "Temporal Verdict",
+            "type": "string"
+          },
+          "temporally_unverifiable": {
+            "title": "Temporally Unverifiable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "causal_edge_id",
+          "source_event_id",
+          "target_event_id",
+          "edge_kind",
+          "confidence",
+          "propagation_weight",
+          "provenance_class",
+          "temporal_verdict",
+          "temporally_unverifiable"
+        ],
+        "title": "GraphEdgeView",
+        "type": "object"
+      },
+      "GraphNodeView": {
+        "additionalProperties": false,
+        "description": "One node of an extracted subgraph.",
+        "properties": {
+          "depth_from_seed": {
+            "minimum": 0.0,
+            "title": "Depth From Seed",
+            "type": "integer"
+          },
+          "event_id": {
+            "minLength": 1,
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "minLength": 1,
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeIntervalView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_type",
+          "provenance_class",
+          "depth_from_seed"
+        ],
+        "title": "GraphNodeView",
+        "type": "object"
+      },
+      "GraphStandingView": {
+        "description": "Which graph a traversal walked (ADR-0059), mirrored for the presentation layer.\n\nA mirror rather than a re-export because `GraphStanding` lives in `causal_engine` (L6)\nand the API may not import it. The two are kept in step by\n`tests/api/test_standing_mirror_is_total.py`, which enumerates both enums: a member\nadded to one and not the other fails, so the mirror cannot silently narrow.\n\n`UNPROMOTED_DIAGNOSTIC` is carried into responses ON PURPOSE. It marks output the\nengine has disowned -- walked over module 10's scored graph before promotion -- and\nADR-0059 defends it with a required field, one construction site, a validator refusing\n`INFERRED`, and a fixed notice. OQ-026 records the residual risk honestly: none of\nthose four mechanisms survives a screenshot. The API adds the fifth it can: the notice\nis a REQUIRED field on any response carrying this standing, not an optional annotation.",
+        "enum": [
+          "STATED",
+          "UNPROMOTED_DIAGNOSTIC"
+        ],
+        "title": "GraphStandingView",
+        "type": "string"
+      },
+      "GraphSubgraphView": {
+        "additionalProperties": false,
+        "description": "An extracted subgraph, with what was left out stated rather than implied.",
+        "properties": {
+          "depth": {
+            "minimum": 0.0,
+            "title": "Depth",
+            "type": "integer"
+          },
+          "edges": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphEdgeView"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "empty_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Empty Because"
+          },
+          "nodes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphNodeView"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "rejected_claim_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Rejected Claim Count",
+            "type": "integer"
+          },
+          "seed_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed Event Id"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "truncation_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Truncation Detail"
+          }
+        },
+        "required": [
+          "standing",
+          "depth"
+        ],
+        "title": "GraphSubgraphView",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthView": {
+        "additionalProperties": false,
+        "description": "What a health probe reports.",
+        "properties": {
+          "api_schema_version": {
+            "title": "Api Schema Version",
+            "type": "string"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "engine_version",
+          "api_schema_version"
+        ],
+        "title": "HealthView",
+        "type": "object"
+      },
+      "InterventionRequest": {
+        "additionalProperties": false,
+        "description": "One proposed change to the world, as it arrives on the wire.\n\nIt holds a mapping rather than a typed payload because forbidden edge F5 forbids this\npackage from naming a `counterfactual_engine` type at all. The mapping is parsed into\nmodule 13's closed discriminated union by `orchestration.facade`, on the far side of\nthe seam -- which is also where the parse belongs, since it is a reasoning contract\nrather than a transport concern.",
+        "properties": {
+          "payload": {
+            "title": "Payload",
+            "type": "object"
+          },
+          "rationale": {
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "payload",
+          "rationale"
+        ],
+        "title": "InterventionRequest",
+        "type": "object"
+      },
+      "JobStageView": {
+        "additionalProperties": false,
+        "description": "One stage of one execution: its status, its timing, and why it is not SUCCEEDED.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "elapsed_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Seconds"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "requires": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Requires",
+            "type": "array"
+          },
+          "stage_id": {
+            "minLength": 1,
+            "title": "Stage Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage_id",
+          "status"
+        ],
+        "title": "JobStageView",
+        "type": "object"
+      },
+      "JobView": {
+        "additionalProperties": false,
+        "description": "One pipeline execution, with per-stage progress and timing (prd.md \u00a755).\n\n`progress` is `completed / total` over stages that CAN run. A `NOT_RUNNABLE` stage is\nexcluded from the denominator rather than counted as incomplete: a job that can never\nexceed 6/9 because three modules are unbuilt would otherwise report permanent failure\nto progress, which says something false about the execution.",
+        "properties": {
+          "completed_stage_count": {
+            "minimum": 0.0,
+            "title": "Completed Stage Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dataset_id": {
+            "minLength": 1,
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "execution_id": {
+            "minLength": 1,
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "not_runnable_stage_count": {
+            "minimum": 0.0,
+            "title": "Not Runnable Stage Count",
+            "type": "integer"
+          },
+          "requested_by": {
+            "minLength": 1,
+            "title": "Requested By",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "runnable_stage_count": {
+            "minimum": 0.0,
+            "title": "Runnable Stage Count",
+            "type": "integer"
+          },
+          "stages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/JobStageView"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "status": {
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "total_elapsed_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Elapsed Seconds"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_id",
+          "dataset_id",
+          "status",
+          "requested_by",
+          "created_at",
+          "updated_at",
+          "runnable_stage_count",
+          "completed_stage_count",
+          "not_runnable_stage_count"
+        ],
+        "title": "JobView",
+        "type": "object"
+      },
+      "OntologyConceptView": {
+        "additionalProperties": false,
+        "description": "One concept a domain pack declares, as the presentation layer may see it.",
+        "properties": {
+          "concept_id": {
+            "minLength": 1,
+            "title": "Concept Id",
+            "type": "string"
+          },
+          "concept_kind": {
+            "minLength": 1,
+            "title": "Concept Kind",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "object"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "required": [
+          "concept_kind",
+          "concept_id"
+        ],
+        "title": "OntologyConceptView",
+        "type": "object"
+      },
+      "OntologySummaryView": {
+        "additionalProperties": false,
+        "description": "What ontology a run reasoned under, and what it declares.",
+        "properties": {
+          "concepts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/OntologyConceptView"
+            },
+            "title": "Concepts",
+            "type": "array"
+          },
+          "ontology_hash": {
+            "minLength": 1,
+            "title": "Ontology Hash",
+            "type": "string"
+          },
+          "ontology_version": {
+            "minLength": 1,
+            "title": "Ontology Version",
+            "type": "string"
+          },
+          "pack_schema_version": {
+            "minLength": 1,
+            "title": "Pack Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ontology_version",
+          "ontology_hash",
+          "pack_schema_version"
+        ],
+        "title": "OntologySummaryView",
+        "type": "object"
+      },
+      "OutputEnvelope": {
+        "additionalProperties": false,
+        "description": "Carried by every persisted artifact and every API response body.\n\n`CONVENTIONS.md` \u00a711: an output without its envelope cannot be verified and is a\ndefect. `execution_id` is present for correlation and is excluded from determinism\ndiffs by `scripts/check_determinism.py`.",
+        "properties": {
+          "dataset_version": {
+            "title": "Dataset Version",
+            "type": "string"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "execution_id": {
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "graph_projection_version": {
+            "title": "Graph Projection Version",
+            "type": "string"
+          },
+          "ontology_hash": {
+            "title": "Ontology Hash",
+            "type": "string"
+          },
+          "ontology_version": {
+            "title": "Ontology Version",
+            "type": "string"
+          },
+          "rule_pack_version": {
+            "title": "Rule Pack Version",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "ontology_version",
+          "ontology_hash",
+          "dataset_version",
+          "rule_pack_version",
+          "engine_version",
+          "graph_projection_version",
+          "seed",
+          "execution_id"
+        ],
+        "title": "OutputEnvelope",
+        "type": "object"
+      },
+      "Page_EventView_": {
+        "additionalProperties": false,
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EventView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "sequenced_by": {
+            "minLength": 1,
+            "title": "Sequenced By",
+            "type": "string"
+          },
+          "total_known": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Known"
+          }
+        },
+        "required": [
+          "sequenced_by"
+        ],
+        "title": "Page[EventView]",
+        "type": "object"
+      },
+      "PlateauGroupView": {
+        "additionalProperties": false,
+        "description": "A set of causes that the engine did not sequence, presented unsequenced (OQ-027).\n\nOn the committed slice 310 scored links sit at exactly 0.400000, so under\n`weakest_link_v1` many chains compose identically and the recommended set is frequently\nunsequenceable. OQ-027's stated default is to present tied candidates as an explicitly\nunsequenced SET rather than as a list with an arbitrary first row -- and specifically\n**not** to break the tie on earliness, which would reintroduce ADR-0008's forbidden\nblend by the back door.\n\n`tied` is therefore a required field rather than an inference a client draws from equal\nscores: a client comparing floats would break the tie itself, which is the outcome this\ntype exists to prevent. `members` is the set; nothing about its sequence is meaningful,\nand `docs/api.md` says so.",
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/RankedCauseView"
+            },
+            "minItems": 1,
+            "title": "Members",
+            "type": "array"
+          },
+          "plateau_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plateau Notice"
+          },
+          "plateau_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plateau Value"
+          },
+          "tied": {
+            "title": "Tied",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tied",
+          "members"
+        ],
+        "title": "PlateauGroupView",
+        "type": "object"
+      },
+      "ProvenanceClass": {
+        "description": "How a thing came to be known. Orthogonal to how confident we are in it.",
+        "enum": [
+          "OBSERVED",
+          "ASSUMED",
+          "STATISTICAL",
+          "INFERRED",
+          "SIMULATED"
+        ],
+        "title": "ProvenanceClass",
+        "type": "string"
+      },
+      "ProvenanceSummary": {
+        "additionalProperties": false,
+        "description": "The epistemic status of a payload, without flattening the five classes.\n\n`weakest` is `core.provenance.combine` over everything in the payload, which returns\nthe weakest input and never a stronger one (ADR-0005). `present` is every class the\npayload actually contains, so a reader can see that a response mixing `OBSERVED` facts\nwith one `SIMULATED` value is not uniformly simulated.\n\nBoth are carried because either alone misleads. `weakest` alone hides that most of a\npayload is observed; `present` alone leaves a reader to compute the floor themselves\nand get it wrong. `docs/architecture.md` \u00a72 forbids the API from \"flattening five\nprovenance classes into two\", and reporting only one summary number would be that.",
+        "properties": {
+          "present": {
+            "items": {
+              "$ref": "#/components/schemas/ProvenanceClass"
+            },
+            "minItems": 1,
+            "title": "Present",
+            "type": "array"
+          },
+          "weakest": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          }
+        },
+        "required": [
+          "weakest",
+          "present"
+        ],
+        "title": "ProvenanceSummary",
+        "type": "object"
+      },
+      "RankedCauseView": {
+        "additionalProperties": false,
+        "description": "One candidate cause, with its chain, its evidence and its caveats attached.",
+        "properties": {
+          "chain_composition": {
+            "minLength": 1,
+            "title": "Chain Composition",
+            "type": "string"
+          },
+          "chain_length": {
+            "minimum": 0.0,
+            "title": "Chain Length",
+            "type": "integer"
+          },
+          "chain_scalar": {
+            "title": "Chain Scalar",
+            "type": "number"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/ConfidenceView"
+          },
+          "cost_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Class"
+          },
+          "earliness_rank": {
+            "minimum": 1.0,
+            "title": "Earliness Rank",
+            "type": "integer"
+          },
+          "event_id": {
+            "minLength": 1,
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "minLength": 1,
+            "title": "Event Type",
+            "type": "string"
+          },
+          "evidence_item_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Evidence Item Ids",
+            "type": "array"
+          },
+          "is_actionable": {
+            "title": "Is Actionable",
+            "type": "boolean"
+          },
+          "partial_data_flag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partial Data Flag"
+          },
+          "prevented_event_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Prevented Event Ids",
+            "type": "array"
+          },
+          "prevented_magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevented Magnitude"
+          },
+          "prevented_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevented Share"
+          },
+          "prevented_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevented Unit"
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_type",
+          "confidence",
+          "chain_scalar",
+          "chain_composition",
+          "chain_length",
+          "earliness_rank",
+          "is_actionable",
+          "evidence_item_ids",
+          "provenance_class"
+        ],
+        "title": "RankedCauseView",
+        "type": "object"
+      },
+      "ResponseScope": {
+        "description": "Whether a body describes engine output or the deployment around it.\n\nThis distinction exists because of an honest problem with requiring an envelope\neverywhere: an `OutputEnvelope` describes ONE run, and a handful of endpoints are not\nabout one run. A listing of runs spans many. A job that refused before its packs\nresolved has none yet -- migration 0017's `pipeline_job.run_id` is nullable for exactly\nthat reason, and minting a placeholder would be an identifier that addresses nothing\n(`CONVENTIONS.md` \u00a79).\n\nThe alternative was to synthesize an envelope of empty strings for those, which would\nmean a body carrying version fields that describe nothing. `CONVENTIONS.md` \u00a711 wants\noutputs to be VERIFIABLE; a fabricated envelope is worse than an absent one, because it\nis unverifiable while looking verified.\n\nSo the scope is declared, and the validator below makes `RUN_SCOPED` mean what it says.\n`CATALOG` is a visible choice in a diff, the set of routes using it is small, and\n`tests/api/test_catalog_scope_is_closed.py` fails if a route adopts it without being on\nthe declared list.",
+        "enum": [
+          "RUN_SCOPED",
+          "CATALOG"
+        ],
+        "title": "ResponseScope",
+        "type": "string"
+      },
+      "RootCauseView": {
+        "additionalProperties": false,
+        "description": "ADR-0008's four answers, as four fields that are never merged.\n\n`earliest` answers \"where did this start?\", `highest_consequence` answers \"what is the\nbiggest?\", `most_actionable` answers \"what can anybody change?\", and\n`recommended_groups` answers \"what should we change?\". A response, interface or client\nthat presents any one of them as *the* root cause is a defect (ADR-0008), and there is\n**no root-cause score anywhere on this type** -- a single number would have to weight a\nquantity against a position in a chain, and any figure produced would be a judgement\ndisguised as arithmetic.\n\n`recommended_groups` is a tuple of `PlateauGroupView` rather than of causes, so a tie is\nrepresentable. `actionability_notice` and `standing_notice` are carried as fields rather\nthan left to the client, because a notice a client may omit is a notice that will be\nomitted.",
+        "properties": {
+          "actionability_notice": {
+            "minLength": 1,
+            "title": "Actionability Notice",
+            "type": "string"
+          },
+          "candidate_search_truncated": {
+            "default": false,
+            "title": "Candidate Search Truncated",
+            "type": "boolean"
+          },
+          "earliest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RankedCauseView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "empty_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Empty Because"
+          },
+          "highest_consequence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RankedCauseView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "most_actionable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RankedCauseView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome_event_id": {
+            "minLength": 1,
+            "title": "Outcome Event Id",
+            "type": "string"
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          },
+          "recommended_groups": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PlateauGroupView"
+            },
+            "title": "Recommended Groups",
+            "type": "array"
+          },
+          "sequencing_function": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequencing Function"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "trade_offs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TradeOffView"
+            },
+            "title": "Trade Offs",
+            "type": "array"
+          },
+          "views_agree": {
+            "title": "Views Agree",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "outcome_event_id",
+          "standing",
+          "actionability_notice",
+          "views_agree",
+          "provenance_class"
+        ],
+        "title": "RootCauseView",
+        "type": "object"
+      },
+      "RulePackView": {
+        "additionalProperties": false,
+        "description": "The rule pack a run reasoned under, with its coverage gaps named.\n\n`event_types_without_a_rule` is carried because ADR-0044's coverage report exists and\nbecause `docs/architecture.md` \u00a77 risk 2 is explicit that recall is bounded by rule\ncoverage. Publishing the rules without publishing what they do not cover would satisfy\nPrinciple 4's letter and invert its purpose.",
+        "properties": {
+          "event_types_without_a_rule": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Event Types Without A Rule",
+            "type": "array"
+          },
+          "rule_pack_hash": {
+            "minLength": 1,
+            "title": "Rule Pack Hash",
+            "type": "string"
+          },
+          "rule_pack_schema_version": {
+            "minLength": 1,
+            "title": "Rule Pack Schema Version",
+            "type": "string"
+          },
+          "rule_pack_version": {
+            "minLength": 1,
+            "title": "Rule Pack Version",
+            "type": "string"
+          },
+          "rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RuleSummaryView"
+            },
+            "title": "Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rule_pack_version",
+          "rule_pack_schema_version",
+          "rule_pack_hash"
+        ],
+        "title": "RulePackView",
+        "type": "object"
+      },
+      "RuleSummaryView": {
+        "additionalProperties": false,
+        "description": "One rule, in enough detail that a user can see what governed a conclusion.\n\nprd.md **Principle 4** is the requirement: \"the user must be able to inspect every\ninferred relationship\", and a relationship inferred by a rule is not inspectable while\nthe rule is invisible. `condition` and `conclusion` are rendered from the pack's own\nclosed condition tree rather than paraphrased, so what a reader sees is what fired.",
+        "properties": {
+          "conclusion": {
+            "title": "Conclusion",
+            "type": "object"
+          },
+          "condition": {
+            "title": "Condition",
+            "type": "object"
+          },
+          "knowledge_provenance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Provenance"
+          },
+          "rule_id": {
+            "minLength": 1,
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "rule_kind": {
+            "minLength": 1,
+            "title": "Rule Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule_id",
+          "rule_kind"
+        ],
+        "title": "RuleSummaryView",
+        "type": "object"
+      },
+      "RunComparisonView": {
+        "additionalProperties": false,
+        "description": "Two runs and the inputs that differ, so one input's effect can be isolated.\n\n`differing_inputs` is the point of the endpoint. Two runs that differ in one `RunKey`\nfield isolate that field's effect on the output (ADR-0013's stated positive\nconsequence); two runs that differ in four do not, and a comparison that did not say\nwhich had changed would invite the first reading regardless.",
+        "properties": {
+          "differing_inputs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Differing Inputs",
+            "type": "array"
+          },
+          "identical": {
+            "title": "Identical",
+            "type": "boolean"
+          },
+          "left": {
+            "$ref": "#/components/schemas/RunView"
+          },
+          "right": {
+            "$ref": "#/components/schemas/RunView"
+          }
+        },
+        "required": [
+          "left",
+          "right",
+          "identical"
+        ],
+        "title": "RunComparisonView",
+        "type": "object"
+      },
+      "RunView": {
+        "additionalProperties": false,
+        "description": "One Run: the five inputs that determine it, and what has been derived from it.",
+        "properties": {
+          "causal_edge_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Causal Edge Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "dataset_version": {
+            "minLength": 1,
+            "title": "Dataset Version",
+            "type": "string"
+          },
+          "engine_version": {
+            "minLength": 1,
+            "title": "Engine Version",
+            "type": "string"
+          },
+          "graph_projection_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Projection Version"
+          },
+          "ontology_hash": {
+            "minLength": 1,
+            "title": "Ontology Hash",
+            "type": "string"
+          },
+          "rule_pack_version": {
+            "minLength": 1,
+            "title": "Rule Pack Version",
+            "type": "string"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "dataset_version",
+          "ontology_hash",
+          "rule_pack_version",
+          "engine_version",
+          "seed"
+        ],
+        "title": "RunView",
+        "type": "object"
+      },
+      "SimulationRequest": {
+        "additionalProperties": false,
+        "description": "A set of interventions to apply together.\n\nA SET, not a sequence of separate calls, because ADR-0077 is explicit that two acts on\none chain are simulated jointly and never summed: the overlap between them is real, and\nadding two single-act results would double-count it.",
+        "properties": {
+          "interventions": {
+            "items": {
+              "$ref": "#/components/schemas/InterventionRequest"
+            },
+            "minItems": 1,
+            "title": "Interventions",
+            "type": "array"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView",
+            "default": "STATED"
+          }
+        },
+        "required": [
+          "interventions"
+        ],
+        "title": "SimulationRequest",
+        "type": "object"
+      },
+      "StageStatusView": {
+        "description": "Whether the pipeline stage behind a payload actually produced it.\n\n`NOT_RUNNABLE` is what an endpoint returns when its owning module has not been built --\nmodules 7, 8 and 15 today. It is a 200 with a full envelope and an explicit statement,\nnever an empty success: `docs/architecture.md` \u00a72 requires that a partially computed\nrun \"returns what exists with the stage stated, never a silently truncated graph\", and\nan empty list with no explanation is exactly the silent truncation that forbids.",
+        "enum": [
+          "COMPLETE",
+          "PARTIAL",
+          "NOT_RUNNABLE"
+        ],
+        "title": "StageStatusView",
+        "type": "string"
+      },
+      "StartJobRequest": {
+        "additionalProperties": false,
+        "description": "What a caller supplies to start one pipeline execution.",
+        "properties": {
+          "dataset_id": {
+            "minLength": 1,
+            "title": "Dataset Id",
+            "type": "string"
+          },
+          "rows": {
+            "default": 150,
+            "minimum": 0.0,
+            "title": "Rows",
+            "type": "integer"
+          },
+          "seed": {
+            "default": 0,
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dataset_id"
+        ],
+        "title": "StartJobRequest",
+        "type": "object"
+      },
+      "TimeIntervalView": {
+        "additionalProperties": false,
+        "description": "An instant as this system actually knows it: a bounded interval with a precision.\n\nNever collapsed to a single timestamp. ADR-0021 makes time an interval because a\nday-granular source does not know an instant, and a wire shape that emitted `t_earliest`\nalone would hand a client a precision the data does not have -- which is the failure\nLAW-TIME's whole interval treatment exists to avoid.",
+        "properties": {
+          "precision": {
+            "minLength": 1,
+            "title": "Precision",
+            "type": "string"
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "t_earliest": {
+            "format": "date-time",
+            "title": "T Earliest",
+            "type": "string"
+          },
+          "t_latest": {
+            "format": "date-time",
+            "title": "T Latest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "t_earliest",
+          "t_latest",
+          "precision",
+          "provenance_class",
+          "source"
+        ],
+        "title": "TimeIntervalView",
+        "type": "object"
+      },
+      "TimelineEntryView": {
+        "additionalProperties": false,
+        "description": "One entry in a timeline: an event, or a marked gap where an event is absent.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "kind": {
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeIntervalView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sequence_index": {
+            "minimum": 0.0,
+            "title": "Sequence Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "sequence_index"
+        ],
+        "title": "TimelineEntryView",
+        "type": "object"
+      },
+      "TimelineView": {
+        "additionalProperties": false,
+        "description": "One process instance's timeline. A gap is a marked entry, never an interpolation.",
+        "properties": {
+          "entries": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TimelineEntryView"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "process_instance_id": {
+            "minLength": 1,
+            "title": "Process Instance Id",
+            "type": "string"
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          },
+          "timeline_id": {
+            "minLength": 1,
+            "title": "Timeline Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timeline_id",
+          "process_instance_id",
+          "provenance_class"
+        ],
+        "title": "TimelineView",
+        "type": "object"
+      },
+      "TimingMeta": {
+        "additionalProperties": false,
+        "description": "What one operation cost, and what it was allowed to cost.\n\nCarried on every API response. `CONVENTIONS.md` \u00a711 excludes performance measurements\nfrom determinism comparisons, so this whole model is excluded -- which is why the\nbudget and its name travel WITH the measurement rather than being looked up by a\nreader: a number the determinism diff ignores must still be interpretable on its own.\n\n`within_budget` is None when the operation has no declared budget. That is a third\nstate and not a quiet `True`: \"this was fast enough\" and \"nobody said how fast this\nshould be\" are different claims, and collapsing them would let an unbudgeted endpoint\nreport compliance it was never measured for.",
+        "properties": {
+          "budget_enforced": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Enforced"
+          },
+          "budget_name": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BudgetName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Seconds"
+          },
+          "elapsed_seconds": {
+            "title": "Elapsed Seconds",
+            "type": "number"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "within_budget": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Within Budget"
+          }
+        },
+        "required": [
+          "operation",
+          "elapsed_seconds"
+        ],
+        "title": "TimingMeta",
+        "type": "object"
+      },
+      "TradeOffView": {
+        "additionalProperties": false,
+        "description": "One pair of root-cause views that name different events, and what it costs to pick.",
+        "properties": {
+          "detail": {
+            "minLength": 1,
+            "title": "Detail",
+            "type": "string"
+          },
+          "first_event_id": {
+            "minLength": 1,
+            "title": "First Event Id",
+            "type": "string"
+          },
+          "first_view": {
+            "minLength": 1,
+            "title": "First View",
+            "type": "string"
+          },
+          "second_event_id": {
+            "minLength": 1,
+            "title": "Second Event Id",
+            "type": "string"
+          },
+          "second_view": {
+            "minLength": 1,
+            "title": "Second View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_view",
+          "first_event_id",
+          "second_view",
+          "second_event_id",
+          "detail"
+        ],
+        "title": "TradeOffView",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "A domain-agnostic causal intelligence engine. Every response carries its run, its provenance, its evidence references and its confidence decomposition; no endpoint returns a confidence without its components.",
+    "title": "CausaLog",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/healthz": {
+      "get": {
+        "description": "Report liveness, the engine version, and the frozen API shell version.\n\nThe engine version participates in every `run_id` (ADR-0013), so reporting it here\nmakes \"which engine produced this?\" answerable from the running container.",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/v1/jobs": {
+      "get": {
+        "description": "List recent executions, newest first.",
+        "operationId": "list_jobs_v1_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_tuple_JobView__________"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Jobs",
+        "tags": [
+          "jobs"
+        ]
+      },
+      "post": {
+        "description": "Accept a pipeline execution and return 202 with its identifier.\n\n202, not 201: nothing is created yet that the caller can read in full. The execution\nexists and has an identifier; its artifacts do not.\n\nA repeated `Idempotency-Key` returns the ORIGINAL execution rather than starting a\nsecond one, and the lookup happens before anything is written.",
+        "operationId": "start_job_v1_jobs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_JobView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/jobs/{execution_id}": {
+      "get": {
+        "description": "Return one execution's stage-by-stage progress and timing.",
+        "operationId": "read_job_v1_jobs__execution_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_JobView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/runs": {
+      "get": {
+        "description": "List every run materialized in this process, in canonical sequence.\n\nCATALOG scope: this body spans many runs, so there is no single `OutputEnvelope` that\ndescribes it. Each ITEM carries the five inputs that identify its run; synthesizing an\nenvelope for the listing would be fabricating version fields that describe nothing.",
+        "operationId": "list_runs_v1_runs_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_tuple_RunView__________"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/compare": {
+      "get": {
+        "description": "Compare two runs and name the inputs that differ.",
+        "operationId": "compare_runs_v1_runs_compare_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "left",
+            "required": true,
+            "schema": {
+              "title": "Left",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "right",
+            "required": true,
+            "schema": {
+              "title": "Right",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunComparisonView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compare Runs",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/counterfactuals": {
+      "post": {
+        "description": "Simulate a world in which the named interventions held.\n\nA caller asking for the diagnostic standing must hold `READ_DIAGNOSTIC` as well as\n`SIMULATE`. The check is here rather than in `standing_guard` because the standing\narrives in the BODY on this endpoint, not in the query string, and a guard reading\nquery parameters would silently pass it.",
+        "operationId": "simulate_counterfactual_v1_runs__run_id__counterfactuals_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_str__Any__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Simulate Counterfactual",
+        "tags": [
+          "counterfactuals"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/events": {
+      "get": {
+        "description": "Return a page of a run's events, in `CONVENTIONS.md` \u00a711's canonical sequence.\n\nOne extra item is requested and then dropped. That is how `has_more` is answered\nwithout a second query and without a count: asking for `size + 1` and seeing whether it\narrived distinguishes \"this is the last page\" from \"the next page is empty\", which a\ncursor alone cannot.",
+        "operationId": "read_events_v1_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Page_EventView__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Events",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/graph": {
+      "get": {
+        "description": "Extract a bounded subgraph, saying what was left out and why it may be empty.",
+        "operationId": "read_graph_v1_runs__run_id__graph_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "seed_event_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Seed Event Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "depth",
+            "required": false,
+            "schema": {
+              "default": 2,
+              "maximum": 10,
+              "minimum": 0,
+              "title": "Depth",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "standing",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/GraphStandingView",
+              "default": "STATED"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_GraphSubgraphView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Graph",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/inferred-artifacts": {
+      "delete": {
+        "description": "Drop a run's inferred artifacts. Observed facts are untouched and unreachable here.",
+        "operationId": "delete_inferred_artifacts_v1_runs__run_id__inferred_artifacts_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Union_RunView__NoneType__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Inferred Artifacts",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/ontology": {
+      "get": {
+        "description": "Return the ontology this run reasoned under, with its hash.",
+        "operationId": "read_ontology_v1_runs__run_id__ontology_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OntologySummaryView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Ontology",
+        "tags": [
+          "introspection"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/propagation/{seed_event_id}": {
+      "get": {
+        "description": "Measure one event's consequences, attributed to the node set (ADR-0061).\n\nThe payload is the canonical body of a `draft` artifact rather than a hand-written\nview: `PropagationReport` is `draft` in `CONTEXT.md` \u00a76, and mirroring it into a frozen\nwire shape would freeze it by assertion. `docs/api.md` marks this body as `draft`.",
+        "operationId": "read_propagation_v1_runs__run_id__propagation__seed_event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "seed_event_id",
+            "required": true,
+            "schema": {
+              "title": "Seed Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "standing",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/GraphStandingView",
+              "default": "STATED"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_str__Any__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Propagation",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/root-causes/{outcome_event_id}": {
+      "get": {
+        "description": "Rank the causes of one outcome as ADR-0008's four never-merged views.",
+        "operationId": "read_root_causes_v1_runs__run_id__root_causes__outcome_event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "outcome_event_id",
+            "required": true,
+            "schema": {
+              "title": "Outcome Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "standing",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/GraphStandingView",
+              "default": "STATED"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RootCauseView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Root Causes",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/rule-pack": {
+      "get": {
+        "description": "Return the rules that governed this run's conclusions, and their coverage gaps.",
+        "operationId": "read_rule_pack_v1_runs__run_id__rule_pack_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RulePackView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Rule Pack",
+        "tags": [
+          "introspection"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/timelines/{process_instance_id}": {
+      "get": {
+        "description": "Return one process instance's timeline, with gaps marked rather than interpolated.",
+        "operationId": "read_timeline_v1_runs__run_id__timelines__process_instance_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "process_instance_id",
+            "required": true,
+            "schema": {
+              "title": "Process Instance Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Union_TimelineView__NoneType__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Timeline",
+        "tags": [
+          "analysis"
+        ]
+      }
+    }
+  }
+}

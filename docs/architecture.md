@@ -50,7 +50,7 @@ is a defect.
 | L6 | `causal_engine` | Produce scored causal structure | 9 Candidate Cause Generator · 10 Confidence Scorer · 11 Root Cause Analyzer · 12 Propagation Analyzer · *(plus two packages that are deliberately not modules: the Causal Graph Builder and the pattern miner — see §2 and OQ-025)* |
 | L7 | `counterfactual_engine` · `recommendation_engine` | Simulate worlds; rank interventions | 13 Counterfactual Simulator · 14 Intervention Optimizer |
 | L8 | `explanation_engine` | Render graph evidence into language | 15 Explanation Generator |
-| L9 | `orchestration` | Compose a Run by wiring adapters into the pipeline | — |
+| L9 | `orchestration` | Compose a Run by wiring adapters into the pipeline | — (built 2026-09-20, ADR-0083: the pipeline as 15 declared stages, a resumable job with an append-only ledger, and `EngineFacade` as the only surface L10 may call) |
 | L10 | `api` | Expose results as structured JSON | 16 Visualization API |
 | — | `persistence` | Implement L0 ports against PostgreSQL, Neo4j, Redis | — (built 2026-08-29; `docs/data-model.md`) |
 | — | `frontend` | Render the six workspaces (prd.md §51) | — |
@@ -377,6 +377,13 @@ module 9 depends on it and a seam with no stated contract is one every consumer 
 ---
 
 ### Module 16 — Visualization API · `api` · L10
+
+> **Built 2026-09-20** (ADR-0080 through ADR-0087), `built-unverified`. The contract is
+> `docs/api.md`, frozen at `api_schema_version` 1.0.0 — the SHELL only; payload bodies stay
+> `draft` under their owning modules. `docs/openapi.json` is generated from the application
+> and drift-checked in `make laws` and CI. The invariants below are now enforced by a
+> blocking law test over the live route table and the AST of `api/routes/`, rather than by
+> review.
 
 - **Responsibility.** Serve reasoning results as structured JSON over HTTP (prd.md §53).
 - **Input.** HTTP request, `orchestration` façade
@@ -820,7 +827,7 @@ This document creates the following obligations. Each is either satisfied now or
 | LAW-DOMAIN lint exists, fails the build, and catches identifier forms | satisfied since ADR-0019; the first implementation did not (DEF-0001) |
 | Every enforcement script is observed to reject, not merely to pass | satisfied — `--self-test` on all five law scripts and on the stack preflight, run in CI before each scan |
 | A rebuild command exists (ADR-0001 obligation) | **satisfied 2026-08-29.** `scripts/rebuild_graph.py` implements all six steps of §3.3 over `causalog.persistence.neo4j.projection`. `make verify-projection RUN_ID=…` additionally reports drift at any time, which is the case that matters — drift arrives after the build. Not yet exercised against a live Neo4j (`PROGRESS.md` §00d, known gaps). |
-| The determinism gate runs the pipeline twice | script exists; **NOT-YET-RUNNABLE** until the pipeline exists — tracked in `PROGRESS.md` |
+| The determinism gate runs the pipeline twice | **script and entry point both exist as of 2026-09-20 (ADR-0083).** `causalog.orchestration.pipeline` is the `python -m` target `scripts/check_determinism.py` looks for, and the gate now RUNS rather than exiting 2. Exercised twice over a materialized dataset, the gate's own `compare()` reports 0 mismatches across 9 artifacts. It is **not** green in CI: the DataCo source file is not in the repository, so no clean layer exists there and the gate reports `NOT-RUNNABLE`. The entry point refuses to exit 0 on an unmaterialized dataset, so two identically-failing runs cannot be scored as byte-identical. OQ-014 |
 | `tests/ontology/test_ontology_swap.py` proves domain independence empirically | **still open.** `tests/ontology/test_pack_is_not_domain_shaped.py` (ADR-0026) discharges half of it: two unrelated domains load through one code path, share no behavioural vocabulary, and share only the structural base. That the swap changes engine *output* still needs a pipeline. |
 | The domain pack schema is published and cannot drift from its validator | satisfied — generated from `causalog.ontology_runtime.dsl`, checked by `scripts/export_ontology_schema.py --check` in `make laws` and CI (ADR-0026) |
 | A new domain can be onboarded by someone who did not write the ontology layer | satisfied — `docs/ontology.md` §4, a numbered checklist |
