@@ -3516,6 +3516,56 @@ never was. The symptom was misleading in the worst way — the determinism compa
 *without needing* its `execution_id` exclusion, because the field was stable when it was
 supposed to be volatile.
 
+### Completing the prd.md §53 surface (same session)
+
+The first pass left three of §53's ten endpoints unserved. Two were deliverable and one was
+owed a declaration:
+
+| Endpoint | Status |
+|---|---|
+| `GET /v1/runs/{run_id}/recommendations` | **Served.** Module 14 was already built; nothing but the wiring was missing |
+| `GET /v1/runs/{run_id}/reports/{process_instance_id}` | **Declared `NOT_RUNNABLE`**, naming module 15. Omitting the route made "nothing to say" and "nobody built the thing that says it" indistinguishable — the same failure the pipeline's declared stages avoid |
+| `GET /v1/datasets/{dataset_id}/validation` | **Served**, under `CATALOG` scope. Mapping coverage and data quality reported separately, never merged into one verdict |
+
+**prd.md Principle 5 is now enforced by a type.** `RecommendationView` requires expected
+benefit, confidence, supporting evidence and assumptions; `evidence_item_ids` and
+`assumptions` carry `min_length=1` and `confidence` is a `ConfidenceView`. An unsupported
+recommendation is unconstructable rather than filtered out downstream.
+
+Measured on the shared synthetic run:
+
+```
+GET /v1/runs/{run}/recommendations            200  0.037s of a 5.0s budget
+  recommendations: 0 | withheld: 180
+  withheld_by_reason: [['BENEFIT_NOT_MEASURABLE', 180]]
+
+GET /v1/runs/{run}/reports/{pid}              200  stage_status=NOT_RUNNABLE
+GET /v1/datasets/dataco/validation            200  scope=CATALOG, envelope=None
+  bound columns: 40 | bindings: 55 | mapping findings: 39
+  quality report available: False  (absent, with the reason stated)
+```
+
+### A sixth defect, and it had already shipped
+
+**`/v1/runs/{run_id}/counterfactuals` raised on every call.** `_simulation_context` read
+`joint_cause_groups` from `PromotedGraph`, which carries `joint_groups`; every POST raised
+`AttributeError` and surfaced as a 500. It shipped in the previous commit and no test
+caught it, because **no test had ever sent a well-formed intervention** — the
+permission-matrix test sends one but asserts only that it is not a 403. A route exercised
+only for its status code is a route nobody has run.
+
+Fixed at both call sites, and the fix carried a second correction with it: joint groups and
+feedback loops are properties of PROMOTION, so both are empty under the
+`UNPROMOTED_DIAGNOSTIC` standing rather than borrowed from a graph the query is not
+walking. `scripts/simulate_counterfactuals.py` had this right and carried a comment saying
+why; the facade had not copied it.
+
+`tests/api/test_recommendations_and_reports.py::test_simulating_an_intervention_succeeds`
+is the regression guard, and it now asserts a 200 with `SIMULATED` provenance rather than
+a status code alone.
+
+Suite 1,621 green.
+
 ### What this does NOT establish
 
 - **The gate is not green in CI.** The DataCo source file is not in the repository, so no

@@ -401,6 +401,106 @@
         "title": "ApiResponse[Page[EventView]]",
         "type": "object"
       },
+      "ApiResponse_RecommendationSetView_": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/RecommendationSetView"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[RecommendationSetView]",
+        "type": "object"
+      },
       "ApiResponse_RootCauseView_": {
         "additionalProperties": false,
         "properties": {
@@ -915,6 +1015,106 @@
         "title": "ApiResponse[Union[TimelineView, NoneType]]",
         "type": "object"
       },
+      "ApiResponse_ValidationStatusView_": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ValidationStatusView"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutputEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResponseScope"
+          },
+          "stage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Detail"
+          },
+          "stage_status": {
+            "$ref": "#/components/schemas/StageStatusView"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/TimingMeta"
+          }
+        },
+        "required": [
+          "scope",
+          "provenance",
+          "standing",
+          "stage_status",
+          "timing",
+          "generated_at",
+          "data"
+        ],
+        "title": "ApiResponse[ValidationStatusView]",
+        "type": "object"
+      },
       "ApiResponse_dict_str__Any__": {
         "additionalProperties": false,
         "properties": {
@@ -1222,6 +1422,103 @@
           "data"
         ],
         "title": "ApiResponse[tuple[RunView, ...]]",
+        "type": "object"
+      },
+      "AssumptionView": {
+        "additionalProperties": false,
+        "description": "One assumption a recommendation rests on, and what would falsify it.\n\n`falsified_by` is required and non-empty. An assumption nobody can test is not an\nassumption, it is a hope; naming its falsifier is what makes prd.md Principle 5's\n\"assumptions\" bullet something a reader can act on rather than a disclaimer.",
+        "properties": {
+          "falsified_by": {
+            "minLength": 1,
+            "title": "Falsified By",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "statement": {
+            "minLength": 1,
+            "title": "Statement",
+            "type": "string"
+          },
+          "why_needed": {
+            "minLength": 1,
+            "title": "Why Needed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "statement",
+          "why_needed",
+          "falsified_by"
+        ],
+        "title": "AssumptionView",
+        "type": "object"
+      },
+      "BenefitRangeView": {
+        "additionalProperties": false,
+        "description": "What an act is expected to prevent, as a RANGE rather than a point.\n\n`low`/`high` are nullable together with `unit`: a benefit whose whole is unmeasurable\nhas no proportion, and ADR-0075 makes the range the artifact rather than a single\nnumber precisely so that an estimate cannot be read as a measurement. A `None` here\nmeans \"not measurable from this run\", never zero.",
+        "properties": {
+          "headline_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline Event Id"
+          },
+          "high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "point_of_departure": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Point Of Departure"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "title": "BenefitRangeView",
         "type": "object"
       },
       "BudgetName": {
@@ -1922,6 +2219,48 @@
         "title": "OntologySummaryView",
         "type": "object"
       },
+      "OrdinalAssessmentView": {
+        "additionalProperties": false,
+        "description": "An ordinal band read from the pack -- a cost or an operational risk.\n\n`class_id` is nullable and the nullability is load-bearing in opposite directions for\nthe two uses (ADR-0073): an absent COST ranks a candidate as free, which is a wrong\nnumber, so cost is mandatory in the pack; an absent RISK ranks it nowhere, which is a\ntrue statement about the pack, so risk is optional. The view carries both the same way\nand `provenance_class` is `ASSUMED` for both, because an ordinal band declared by a\ndomain author is never an observation.",
+        "properties": {
+          "class_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Id"
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "span": {
+            "minimum": 0.0,
+            "title": "Span",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "span",
+          "provenance_class"
+        ],
+        "title": "OrdinalAssessmentView",
+        "type": "object"
+      },
       "OutputEnvelope": {
         "additionalProperties": false,
         "description": "Carried by every persisted artifact and every API response body.\n\n`CONVENTIONS.md` \u00a711: an output without its envelope cannot be verified and is a\ndefect. `execution_id` is present for correlation and is excluded from determinism\ndiffs by `scripts/check_determinism.py`.",
@@ -2236,6 +2575,297 @@
           "provenance_class"
         ],
         "title": "RankedCauseView",
+        "type": "object"
+      },
+      "RecommendationSetView": {
+        "additionalProperties": false,
+        "description": "What this run recommends, what it withheld, and why the set may be empty.",
+        "properties": {
+          "empty_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Empty Because"
+          },
+          "recommendations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RecommendationView"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          },
+          "standing_notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standing Notice"
+          },
+          "withheld": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WithheldRecommendationView"
+            },
+            "title": "Withheld",
+            "type": "array"
+          },
+          "withheld_by_reason": {
+            "default": [],
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Withheld By Reason",
+            "type": "array"
+          }
+        },
+        "required": [
+          "standing"
+        ],
+        "title": "RecommendationSetView",
+        "type": "object"
+      },
+      "RecommendationView": {
+        "additionalProperties": false,
+        "description": "One ranked act, with prd.md Principle 5 enforced by this type.\n\nPrinciple 5: \"Every recommendation must identify: expected benefit, confidence,\nsupporting evidence, assumptions.\" All four are REQUIRED here -- `evidence_item_ids`\nand `assumptions` carry `min_length=1`, `confidence` is a `ConfidenceView` which itself\ncannot exist without components, and `expected_benefit` has no default. **An\nunsupported recommendation cannot be instantiated**, which is the same move ADR-0075\nmade on the artifact, carried to the place a client actually reads.\n\nThat is deliberately stronger than filtering unsupported recommendations out later: a\nfilter is a step somebody can forget, and a type is not.\n\nThere is no single \"score\" field. `desirability` is present but names the\n`core.scalarization` function that produced it and the weights it was produced under,\nso a ranking can never be read under a weighting that did not make it. `pareto_optimal`\nis carried beside it because it is a stronger statement than a high desirability and is\nindependent of any weighting.",
+        "properties": {
+          "affected_event_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Affected Event Ids",
+            "type": "array"
+          },
+          "affected_instance_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Affected Instance Count",
+            "type": "integer"
+          },
+          "affected_magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affected Magnitude"
+          },
+          "affected_magnitude_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affected Magnitude Unit"
+          },
+          "affected_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affected Share"
+          },
+          "assumptions": {
+            "items": {
+              "$ref": "#/components/schemas/AssumptionView"
+            },
+            "minItems": 1,
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/ConfidenceView"
+          },
+          "description": {
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "desirability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desirability"
+          },
+          "evidence_item_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Evidence Item Ids",
+            "type": "array"
+          },
+          "expected_benefit": {
+            "$ref": "#/components/schemas/BenefitRangeView"
+          },
+          "implementation_cost": {
+            "$ref": "#/components/schemas/OrdinalAssessmentView"
+          },
+          "is_set": {
+            "default": false,
+            "title": "Is Set",
+            "type": "boolean"
+          },
+          "is_set_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Set Because"
+          },
+          "node_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Node Event Ids",
+            "type": "array"
+          },
+          "node_event_types": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Node Event Types",
+            "type": "array"
+          },
+          "objective_weights": {
+            "default": [],
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Objective Weights",
+            "type": "array"
+          },
+          "operational_risk": {
+            "$ref": "#/components/schemas/OrdinalAssessmentView"
+          },
+          "pareto_optimal": {
+            "default": false,
+            "title": "Pareto Optimal",
+            "type": "boolean"
+          },
+          "portfolio_joint_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Portfolio Joint High"
+          },
+          "portfolio_joint_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Portfolio Joint Low"
+          },
+          "provenance_class": {
+            "$ref": "#/components/schemas/ProvenanceClass"
+          },
+          "recommendation_id": {
+            "minLength": 1,
+            "title": "Recommendation Id",
+            "type": "string"
+          },
+          "scalarization": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scalarization"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Sources",
+            "type": "array"
+          },
+          "standing": {
+            "$ref": "#/components/schemas/GraphStandingView"
+          }
+        },
+        "required": [
+          "recommendation_id",
+          "standing",
+          "node_event_ids",
+          "node_event_types",
+          "description",
+          "sources",
+          "expected_benefit",
+          "confidence",
+          "evidence_item_ids",
+          "assumptions",
+          "implementation_cost",
+          "operational_risk",
+          "provenance_class"
+        ],
+        "title": "RecommendationView",
         "type": "object"
       },
       "ResponseScope": {
@@ -2876,6 +3506,158 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "ValidationStatusView": {
+        "additionalProperties": false,
+        "description": "Whether a dataset is fit to reason over, and what is wrong with it if not.\n\nTwo independent measurements, deliberately not merged into one verdict:\n\n* **Mapping coverage** (module 2) -- which source columns bind to an ontology concept,\n  and every finding an author should see. Answers \"is this dataset DESCRIBED?\".\n* **Data quality** (module 1) -- what the pinned file actually contains, with every\n  finding carrying the downstream consequence of ignoring it. Answers \"is this dataset\n  USABLE?\".\n\nA dataset can pass either and fail the other, and a single \"valid: true/false\" would\ncollapse the difference. `quality_report_available` is a third state rather than a\nquiet false: a report that was never produced and a report that found nothing are\ndifferent, and only one of them is a reason to proceed.",
+        "properties": {
+          "binding_count": {
+            "minimum": 0.0,
+            "title": "Binding Count",
+            "type": "integer"
+          },
+          "bound_column_count": {
+            "minimum": 0.0,
+            "title": "Bound Column Count",
+            "type": "integer"
+          },
+          "dataset_version": {
+            "minLength": 1,
+            "title": "Dataset Version",
+            "type": "string"
+          },
+          "mapping_findings": {
+            "default": [],
+            "items": {
+              "type": "object"
+            },
+            "title": "Mapping Findings",
+            "type": "array"
+          },
+          "mapping_id": {
+            "minLength": 1,
+            "title": "Mapping Id",
+            "type": "string"
+          },
+          "mapping_version": {
+            "minLength": 1,
+            "title": "Mapping Version",
+            "type": "string"
+          },
+          "ontology_pack": {
+            "minLength": 1,
+            "title": "Ontology Pack",
+            "type": "string"
+          },
+          "ontology_version": {
+            "minLength": 1,
+            "title": "Ontology Version",
+            "type": "string"
+          },
+          "quality_findings": {
+            "default": [],
+            "items": {
+              "type": "object"
+            },
+            "title": "Quality Findings",
+            "type": "array"
+          },
+          "quality_report_absent_because": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Report Absent Because"
+          },
+          "quality_report_available": {
+            "title": "Quality Report Available",
+            "type": "boolean"
+          },
+          "reject_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Count"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          }
+        },
+        "required": [
+          "dataset_version",
+          "mapping_id",
+          "mapping_version",
+          "ontology_pack",
+          "ontology_version",
+          "bound_column_count",
+          "binding_count",
+          "quality_report_available"
+        ],
+        "title": "ValidationStatusView",
+        "type": "object"
+      },
+      "WithheldRecommendationView": {
+        "additionalProperties": false,
+        "description": "An act the engine considered and declined to recommend, with its reason.\n\nPublished beside the recommendations rather than discarded, for the reason the Causal\nGraph Builder publishes its rejection ledger: on this dataset the engine frequently\nrecommends NOTHING, and a bare empty list says \"we found nothing\" where the true\nstatement is \"we found candidates and every one fell short, here is which test each\nfailed\". `reason` is the closed `WithholdingReason` vocabulary, so a client can count\nby reason without parsing prose.",
+        "properties": {
+          "checked_against": {
+            "minLength": 1,
+            "title": "Checked Against",
+            "type": "string"
+          },
+          "detail": {
+            "minLength": 1,
+            "title": "Detail",
+            "type": "string"
+          },
+          "node_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Node Event Ids",
+            "type": "array"
+          },
+          "node_event_types": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Node Event Types",
+            "type": "array"
+          },
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_event_ids",
+          "node_event_types",
+          "reason",
+          "checked_against",
+          "detail"
+        ],
+        "title": "WithheldRecommendationView",
+        "type": "object"
       }
     }
   },
@@ -2905,6 +3687,81 @@
         "summary": "Healthz",
         "tags": [
           "meta"
+        ]
+      }
+    },
+    "/v1/datasets/{dataset_id}/validation": {
+      "get": {
+        "description": "Report whether a dataset is described, and whether it is usable.\n\n`CATALOG` scope: a dataset is not a run. A dataset is a pack plus a mapping plus a\npinned file; a run is those PLUS a rule pack, an engine version and a seed (ADR-0013).\nAttaching a run envelope here would claim this answer came from a run it did not.\n\nThe two measurements are reported separately and never combined into one verdict. A\ndataset whose every column binds can still be unusable, and one with mapping gaps can\nstill be measured clean over what it does bind.",
+        "operationId": "read_validation_status_v1_datasets__dataset_id__validation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true,
+            "schema": {
+              "title": "Dataset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ValidationStatusView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Validation Status",
+        "tags": [
+          "datasets"
         ]
       }
     },
@@ -3859,6 +4716,193 @@
           }
         },
         "summary": "Read Propagation",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/recommendations": {
+      "get": {
+        "description": "Rank the acts this graph supports, and publish the ones it withheld.\n\nprd.md \u00a755 budget: 5 s, enforced. **Every recommendation carries prd.md Principle 5's\nfour requirements as REQUIRED fields** -- expected benefit, confidence, supporting\nevidence and assumptions -- so an unsupported one cannot be serialized rather than\nbeing filtered out somewhere downstream.\n\nThe withheld set is published beside the ranked one. On this dataset the engine\nfrequently recommends nothing, and an empty list on its own says \"we found nothing\"\nwhere the true statement is \"we found candidates and every one failed a named test\".",
+        "operationId": "read_recommendations_v1_runs__run_id__recommendations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome_event_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Outcome Event Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "standing",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/GraphStandingView",
+              "default": "STATED"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RecommendationSetView_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Recommendations",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/v1/runs/{run_id}/reports/{process_instance_id}": {
+      "get": {
+        "description": "Render one process instance's narrative report (prd.md \u00a753's `/report/{\u2026}`).\n\nDeclared, and always `NOT_RUNNABLE` today: module 15 is `not-started`. The route exists\nrather than being omitted because an absent route is indistinguishable from one that\nran and found nothing to say, and because a client can bind to the contract now and get\nprose when the module lands. The body names the missing module and points at the three\nendpoints that already carry the same findings without the prose.",
+        "operationId": "read_report_v1_runs__run_id__reports__process_instance_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "process_instance_id",
+            "required": true,
+            "schema": {
+              "title": "Process Instance Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-correlation-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Correlation-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_str__Any__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Report",
         "tags": [
           "analysis"
         ]

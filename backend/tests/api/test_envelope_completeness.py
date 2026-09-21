@@ -29,6 +29,8 @@ RUN_SCOPED_REQUESTS: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", "/v1/runs/{run_id}/graph", None),
     ("GET", "/v1/runs/{run_id}/ontology", None),
     ("GET", "/v1/runs/{run_id}/rule-pack", None),
+    ("GET", "/v1/runs/{run_id}/recommendations", None),
+    ("GET", "/v1/runs/{run_id}/reports/anything", None),
 )
 
 #: The nine fields `CONVENTIONS.md` §11 requires on every artifact and API response.

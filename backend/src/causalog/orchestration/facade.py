@@ -35,15 +35,17 @@ it were the run's graph, would be the overclaiming this project is built to avoi
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from pydantic import TypeAdapter, ValidationError
 
-from causalog.causal_engine.causal_graph_builder import PromotedEdge
+from causalog.causal_engine.causal_graph_builder import JointCauseGroup, PromotedEdge
 from causalog.causal_engine.propagation_analyzer import (
     GraphStanding,
     GraphView,
@@ -61,6 +63,7 @@ from causalog.causal_engine.root_cause_analyzer import (
 from causalog.core.errors import CausaLogError, ContractViolationError
 from causalog.core.provenance import ProvenanceClass
 from causalog.core.run import OutputEnvelope
+from causalog.core.serialization import from_canonical_json
 from causalog.core.types import Timeline
 from causalog.counterfactual_engine import (
     Intervention,
@@ -77,11 +80,22 @@ from causalog.extraction.ontology_adapters import (
     magnitude_measurements_of,
     mutable_attributes_of,
     process_definitions_of,
+    risk_classes_of,
     severity_classes_of,
 )
+from causalog.ingestion.data_adapter import DataQualityReport
+from causalog.ingestion.schema_mapper import inspect_mapping
+from causalog.ontology_runtime import load_pack
 from causalog.orchestration import views
 from causalog.orchestration.stages import PipelineState
 from causalog.orchestration.timing import Budget, BudgetName, TimingMeta, budget_for
+from causalog.orchestration.views import artifact_body
+from causalog.recommendation_engine import (
+    Recommendation,
+    RecommendationContext,
+    RecommendationResult,
+    optimize,
+)
 
 __all__ = [
     "EngineFacade",
@@ -456,6 +470,108 @@ class EngineFacade:
             standing=standing,
         )
 
+    def recommendations(
+        self,
+        run_id: str,
+        *,
+        outcome_event_ids: tuple[str, ...] = (),
+        standing: views.GraphStandingView = views.GraphStandingView.STATED,
+    ) -> QueryResult[views.RecommendationSetView]:
+        """Rank the acts this graph supports, and publish the ones it withheld.
+
+        The withheld set travels with the recommendations rather than being discarded, for
+        the reason the Causal Graph Builder publishes its rejection ledger: on this dataset
+        the engine frequently recommends NOTHING, and a bare empty list says "we found
+        nothing" where the true statement is "we found candidates and every one fell short,
+        here is which test each failed".
+
+        Module 14 obtains benefit ONLY by calling module 13 (ADR-0074), so this needs the
+        simulation context as well as the propagation one -- which is why both are built
+        here and handed over whole rather than rebuilt inside the recommendation context.
+        """
+        workspace = self.workspace(run_id)
+        started = time.perf_counter()
+        budget = budget_for(BudgetName.RECOMMENDATION_GENERATION)
+        if not workspace.has_promoted_graph():
+            return self._not_runnable(
+                workspace,
+                views.RecommendationSetView(
+                    standing=standing,
+                    empty_because="No causal graph was built for this run.",
+                ),
+                operation="recommendations",
+                started=started,
+                budget=budget,
+                detail="No causal graph was built for this run.",
+            )
+        state = workspace.state
+        result = optimize(
+            RecommendationContext(
+                propagation=self._propagation_context(workspace, standing),
+                simulation=self._simulation_context(workspace, standing),
+                actionability=actionability_of(state.pack.pack),
+                cost_vocabulary=cost_classes_of(state.pack.pack),
+                risk_vocabulary=risk_classes_of(state.pack.pack),
+                severity_vocabulary=severity_classes_of(state.pack.pack),
+                # Same rule as `_simulation_context`: both are properties of PROMOTION,
+                # so both are empty under the diagnostic standing rather than borrowed
+                # from a graph this query is not walking.
+                joint_groups=(
+                    ()
+                    if standing is views.GraphStandingView.UNPROMOTED_DIAGNOSTIC
+                    else state.construction.graph.joint_groups
+                ),
+                loops=(
+                    ()
+                    if standing is views.GraphStandingView.UNPROMOTED_DIAGNOSTIC
+                    else state.construction.loops.loops
+                ),
+                outcome_event_ids=outcome_event_ids,
+                parameters=state.rules.pack.recommendation,
+                run_id=workspace.run_id,
+            ),
+            workspace.envelope(),
+            accept_unpromoted=standing is views.GraphStandingView.UNPROMOTED_DIAGNOSTIC,
+        )
+        payload = _recommendation_set_view(result, standing)
+        return self._result(
+            workspace,
+            payload,
+            provenance=tuple(item.provenance_class for item in result.recommendations),
+            operation="recommendations",
+            started=started,
+            budget=budget,
+            standing=standing,
+        )
+
+    def report(self, run_id: str, process_instance_id: str) -> QueryResult[dict[str, Any]]:
+        """Render one process instance's narrative report.
+
+        Always `NOT_RUNNABLE` today, and declared rather than omitted. Module 15 (the
+        Explanation Generator) is `not-started`: it would render each assertion into
+        sentences citing their evidence ids, which is what this endpoint serves. An absent
+        ROUTE would be indistinguishable from a route that ran and found nothing to say;
+        a declared one names the module and what it would have contributed, which is the
+        same ruling `stages.py` makes for the stage behind it.
+        """
+        workspace = self.workspace(run_id)
+        started = time.perf_counter()
+        return self._not_runnable(
+            workspace,
+            {"process_instance_id": process_instance_id},
+            operation="report",
+            started=started,
+            budget=None,
+            detail=(
+                "Module 15 (Explanation Generator) is not-started. It would render this "
+                "run's assertions into sentences that cite their evidence ids, every one "
+                "traceable to the graph. Until it exists this endpoint returns its "
+                "envelope and this statement rather than an empty body: the underlying "
+                "findings are reachable now through /root-causes, /propagation and "
+                "/recommendations, which carry the same evidence without the prose."
+            ),
+        )
+
     def ontology(self, run_id: str) -> QueryResult[views.OntologySummaryView]:
         """Return the ontology this run reasoned under (prd.md Principle 4)."""
         workspace = self.workspace(run_id)
@@ -521,6 +637,76 @@ class EngineFacade:
             budget=None,
         )
 
+    def validate_dataset(
+        self, dataset_id: str, repository_root: Path
+    ) -> views.ValidationStatusView:
+        """Report whether a dataset is described and whether it is usable.
+
+        Returns a view rather than a `QueryResult`, and the route serves it under `CATALOG`
+        scope, because **a dataset is not a run**. A dataset is described by a pack and a
+        mapping and measured by module 1; a run is those inputs PLUS a rule pack, an engine
+        version and a seed (ADR-0013). Attaching a run envelope here would claim this
+        answer came from a run it did not come from.
+
+        Two measurements, deliberately not merged. Mapping coverage answers "is this
+        dataset DESCRIBED?" and comes from module 2's `inspect_mapping`, which assesses
+        WITHOUT refusing -- the whole point of its being split out of `load_mapping` is
+        that an author can see every finding at once. Data quality answers "is this dataset
+        USABLE?" and comes from module 1's committed report. A dataset can pass either and
+        fail the other, and a single `valid: true/false` would collapse the difference.
+        """
+        pack_directory = repository_root / "ontology" / "packs" / dataset_id
+        loaded_pack = load_pack(pack_directory / "ontology.yaml")
+        _, coverage = inspect_mapping(pack_directory / "mapping.yaml", loaded_pack.pack)
+
+        pin_path = repository_root / "datasets" / f"{dataset_id}.pin.json"
+        dataset_version = dataset_id
+        row_count: int | None = None
+        if pin_path.is_file():
+            pin = json.loads(pin_path.read_text(encoding="utf-8"))["payload"]
+            dataset_version = pin["dataset_version"]
+            row_count = int(pin["row_count"])
+
+        report_path = (
+            repository_root
+            / "docs"
+            / "reports"
+            / dataset_id
+            / dataset_version
+            / "data-quality.json"
+        )
+        quality_findings: tuple[dict[str, Any], ...] = ()
+        reject_count: int | None = None
+        absent_because: str | None = None
+        if report_path.is_file():
+            report = from_canonical_json(DataQualityReport, report_path.read_text(encoding="utf-8"))
+            quality_findings = tuple(artifact_body(finding) for finding in report.findings)
+            reject_count = getattr(report, "reject_count", None)
+        else:
+            # A third state, not a quiet false. A report that was never produced and a
+            # report that found nothing are different, and only one is a reason to proceed.
+            absent_because = (
+                f"No data quality report at {report_path.name} for {dataset_version}. "
+                "Module 1 writes one during import; its absence means the dataset has not "
+                "been measured, NOT that it measured clean."
+            )
+
+        return views.ValidationStatusView(
+            dataset_version=dataset_version,
+            mapping_id=coverage.mapping_id,
+            mapping_version=coverage.mapping_version,
+            ontology_pack=coverage.ontology_pack,
+            ontology_version=coverage.ontology_version,
+            bound_column_count=coverage.bound_column_count,
+            binding_count=coverage.binding_count,
+            mapping_findings=tuple(artifact_body(finding) for finding in coverage.findings),
+            quality_report_available=report_path.is_file(),
+            quality_report_absent_because=absent_because,
+            quality_findings=quality_findings,
+            row_count=row_count,
+            reject_count=reject_count,
+        )
+
     # -- context builders -----------------------------------------------------
 
     def _graph_view(self, workspace: RunWorkspace, standing: views.GraphStandingView) -> GraphView:
@@ -571,15 +757,21 @@ class EngineFacade:
         which depth -- which is the stated reason ADR-0069 shaped it that way.
         """
         state = workspace.state
-        links = (
-            unpromoted_links(state.scored)
-            if standing is views.GraphStandingView.UNPROMOTED_DIAGNOSTIC
-            else stated_links(state.construction.graph)
-        )
+        # The links and the groups MUST both come from the graph the standing describes.
+        # Indexing the promoted graph while walking a scored view would report a
+        # hypothetical over an empty graph as one that reached nothing -- a true-LOOKING
+        # statement about the wrong world. Joint groups are a property of PROMOTION, so
+        # there are none under the diagnostic standing; that is an absence, not a zero.
+        if standing is views.GraphStandingView.UNPROMOTED_DIAGNOSTIC:
+            links = unpromoted_links(state.scored)
+            groups: tuple[JointCauseGroup, ...] = ()
+        else:
+            links = stated_links(state.construction.graph)
+            groups = state.construction.graph.joint_groups
         return SimulationContext(
             propagation=self._propagation_context(workspace, standing),
             links=links,
-            joint_groups=state.construction.graph.joint_cause_groups,
+            joint_groups=groups,
             lifecycles=lifecycles_of(state.pack.pack),
             processes=process_definitions_of(state.pack.pack),
             mutability=mutable_attributes_of(state.pack.pack),
@@ -680,6 +872,120 @@ def _parse_interventions(
             ) from failure
         parsed.append(Intervention.of(payload, rationale=item.rationale))
     return tuple(parsed)
+
+
+def _assessment_view(assessment: object) -> views.OrdinalAssessmentView:
+    """Render a cost or risk band. Both share a shape and differ in their nullability."""
+    return views.OrdinalAssessmentView(
+        class_id=getattr(assessment, "class_id", None),
+        rank=getattr(assessment, "rank", None),
+        span=getattr(assessment, "span", 0),
+        provenance_class=getattr(assessment, "provenance_class", ProvenanceClass.ASSUMED),
+    )
+
+
+def _recommendation_view(item: Recommendation) -> views.RecommendationView:
+    """Render one `Recommendation`, with Principle 5's four fields all required."""
+    portfolio = item.portfolio
+    return views.RecommendationView(
+        recommendation_id=item.recommendation_id,
+        standing=views.GraphStandingView(item.standing),
+        node_event_ids=item.node_event_ids,
+        node_event_types=item.node_event_types,
+        description=item.description,
+        sources=tuple(str(getattr(s, "value", s)) for s in item.sources),
+        expected_benefit=views.BenefitRangeView(
+            low=item.expected_benefit.low,
+            high=item.expected_benefit.high,
+            point_of_departure=item.expected_benefit.point_of_departure,
+            unit=item.expected_benefit.unit,
+            headline_event_id=item.expected_benefit.headline_event_id,
+        ),
+        confidence=views.confidence_view(item.confidence),
+        evidence_item_ids=item.evidence_item_ids,
+        assumptions=tuple(
+            views.AssumptionView(
+                name=assumption.name,
+                statement=assumption.statement,
+                why_needed=assumption.why_needed,
+                falsified_by=assumption.falsified_by,
+            )
+            for assumption in item.assumptions
+        ),
+        implementation_cost=_assessment_view(item.implementation_cost),
+        operational_risk=_assessment_view(item.operational_risk),
+        is_set=item.is_set,
+        is_set_because=item.is_set_because,
+        portfolio_joint_low=None if portfolio is None else portfolio.joint_low,
+        portfolio_joint_high=None if portfolio is None else portfolio.joint_high,
+        affected_event_ids=item.affected_event_ids,
+        affected_instance_count=item.affected_instance_count,
+        affected_magnitude=item.affected_magnitude,
+        affected_magnitude_unit=item.affected_magnitude_unit,
+        affected_share=item.affected_share,
+        desirability=item.desirability,
+        scalarization=item.scalarization,
+        objective_weights=item.objective_weights,
+        pareto_optimal=getattr(item, "pareto_optimal", False),
+        provenance_class=item.provenance_class,
+    )
+
+
+def _recommendation_set_view(
+    result: RecommendationResult, standing: views.GraphStandingView
+) -> views.RecommendationSetView:
+    """Render the ranked set, the withheld set, and why the ranked set may be empty."""
+    withheld = tuple(
+        views.WithheldRecommendationView(
+            node_event_ids=item.node_event_ids,
+            node_event_types=item.node_event_types,
+            reason=str(getattr(item.reason, "value", item.reason)),
+            checked_against=item.checked_against,
+            detail=item.detail,
+        )
+        for item in result.withheld
+    )
+    tally: dict[str, int] = {}
+    for item in withheld:
+        tally[item.reason] = tally.get(item.reason, 0) + 1
+    return views.RecommendationSetView(
+        standing=standing,
+        standing_notice=_standing_notice(standing),
+        recommendations=tuple(_recommendation_view(item) for item in result.recommendations),
+        withheld=withheld,
+        withheld_by_reason=tuple(sorted(tally.items())),
+        empty_because=_recommendations_empty_because(result, withheld, tally),
+    )
+
+
+def _recommendations_empty_because(
+    result: RecommendationResult,
+    withheld: tuple[views.WithheldRecommendationView, ...],
+    tally: dict[str, int],
+) -> str | None:
+    """Say why nothing is recommended, when nothing is.
+
+    Three genuinely different silences, and collapsing them would lose the finding:
+    candidates were considered and every one failed a named test; nothing was ever
+    proposed; or the run recommends something after all.
+    """
+    if result.recommendations:
+        return None
+    if withheld:
+        worst = ", ".join(f"{reason} ({count})" for reason, count in sorted(tally.items()))
+        return (
+            f"Nothing is recommended: {len(withheld)} candidate act(s) were considered and "
+            f"every one was withheld. By reason: {worst}. This is a statement about what "
+            "the engine will STAND BEHIND, not about whether anything could be done -- "
+            "each withholding names the test it failed and what it was checked against. "
+            "prd.md Principle 5 requires a benefit, a confidence, evidence AND assumptions; "
+            "a candidate missing any one of them is withheld rather than published without it."
+        )
+    return (
+        "Nothing is recommended and nothing was withheld, which means no candidate act was "
+        "ever proposed. Nothing in the promoted graph is both upstream of an outcome and "
+        "declared actionable by the ontology."
+    )
 
 
 def _optional_str(value: object) -> str | None:

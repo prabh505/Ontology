@@ -22,7 +22,15 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from causalog import ENGINE_VERSION
-from causalog.api.routes import analysis, counterfactuals, health, introspection, jobs, runs
+from causalog.api.routes import (
+    analysis,
+    counterfactuals,
+    datasets,
+    health,
+    introspection,
+    jobs,
+    runs,
+)
 from causalog.api.schemas.errors import ApiError, error_for
 from causalog.api.security.context import CORRELATION_HEADER, new_correlation_id
 from causalog.core.errors import CausaLogError
@@ -34,6 +42,7 @@ __all__ = ["create_app"]
 _ROUTERS = (
     health.router,
     jobs.router,
+    datasets.router,
     runs.router,
     analysis.router,
     introspection.router,

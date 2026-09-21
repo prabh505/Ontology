@@ -34,6 +34,7 @@ __all__ = ["router"]
 router = APIRouter(prefix="/v1/runs", tags=["analysis"])
 
 ObservedDep = Annotated[RequestContext, Depends(requires(Capability.READ_OBSERVED))]
+RecommendationsDep = Annotated[RequestContext, Depends(requires(Capability.READ_RECOMMENDATIONS))]
 
 
 @router.get("/{run_id}/events", response_model=ApiResponse[Page[views.EventView]])
@@ -146,4 +147,58 @@ def read_propagation(
     wire shape would freeze it by assertion. `docs/api.md` marks this body as `draft`.
     """
     result = facade.propagation(run_id, seed_event_id, standing=standing)
+    return respond(result, clock=clock, correlation_id=context.correlation_id)
+
+
+@router.get(
+    "/{run_id}/recommendations",
+    response_model=ApiResponse[views.RecommendationSetView],
+)
+def read_recommendations(
+    run_id: str,
+    facade: FacadeDep,
+    clock: ClockDep,
+    context: RecommendationsDep,
+    outcome_event_id: Annotated[list[str] | None, Query()] = None,
+    standing: views.GraphStandingView = views.GraphStandingView.STATED,
+) -> ApiResponse[views.RecommendationSetView]:
+    """Rank the acts this graph supports, and publish the ones it withheld.
+
+    prd.md §55 budget: 5 s, enforced. **Every recommendation carries prd.md Principle 5's
+    four requirements as REQUIRED fields** -- expected benefit, confidence, supporting
+    evidence and assumptions -- so an unsupported one cannot be serialized rather than
+    being filtered out somewhere downstream.
+
+    The withheld set is published beside the ranked one. On this dataset the engine
+    frequently recommends nothing, and an empty list on its own says "we found nothing"
+    where the true statement is "we found candidates and every one failed a named test".
+    """
+    result = facade.recommendations(
+        run_id,
+        outcome_event_ids=tuple(outcome_event_id or ()),
+        standing=standing,
+    )
+    return respond(result, clock=clock, correlation_id=context.correlation_id)
+
+
+@router.get(
+    "/{run_id}/reports/{process_instance_id}",
+    response_model=ApiResponse[dict[str, Any]],
+)
+def read_report(
+    run_id: str,
+    process_instance_id: str,
+    facade: FacadeDep,
+    clock: ClockDep,
+    context: InferenceDep,
+) -> ApiResponse[dict[str, Any]]:
+    """Render one process instance's narrative report (prd.md §53's `/report/{…}`).
+
+    Declared, and always `NOT_RUNNABLE` today: module 15 is `not-started`. The route exists
+    rather than being omitted because an absent route is indistinguishable from one that
+    ran and found nothing to say, and because a client can bind to the contract now and get
+    prose when the module lands. The body names the missing module and points at the three
+    endpoints that already carry the same findings without the prose.
+    """
+    result = facade.report(run_id, process_instance_id)
     return respond(result, clock=clock, correlation_id=context.correlation_id)

@@ -30,6 +30,7 @@ REQUESTS = (
     "/v1/runs/{run_id}/ontology",
     "/v1/runs/{run_id}/rule-pack",
     "/v1/runs/{run_id}/root-causes/evt:absent00000000",
+    "/v1/runs/{run_id}/recommendations",
 )
 
 

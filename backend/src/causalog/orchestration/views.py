@@ -60,6 +60,8 @@ __all__ = [
     "PlateauGroupView",
     "ProvenanceSummary",
     "RankedCauseView",
+    "RecommendationSetView",
+    "RecommendationView",
     "RootCauseView",
     "RulePackView",
     "RuleSummaryView",
@@ -72,6 +74,8 @@ __all__ = [
     "TimelineEntryView",
     "TimelineView",
     "TradeOffView",
+    "ValidationStatusView",
+    "WithheldRecommendationView",
     "artifact_body",
     "confidence_view",
     "event_view",
@@ -470,6 +474,186 @@ class InterventionSpec(BaseModel):
 
     payload: dict[str, Any]
     rationale: str = Field(min_length=1)
+
+
+class AssumptionView(BaseModel):
+    """One assumption a recommendation rests on, and what would falsify it.
+
+    `falsified_by` is required and non-empty. An assumption nobody can test is not an
+    assumption, it is a hope; naming its falsifier is what makes prd.md Principle 5's
+    "assumptions" bullet something a reader can act on rather than a disclaimer.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(min_length=1)
+    statement: str = Field(min_length=1)
+    why_needed: str = Field(min_length=1)
+    falsified_by: str = Field(min_length=1)
+
+
+class BenefitRangeView(BaseModel):
+    """What an act is expected to prevent, as a RANGE rather than a point.
+
+    `low`/`high` are nullable together with `unit`: a benefit whose whole is unmeasurable
+    has no proportion, and ADR-0075 makes the range the artifact rather than a single
+    number precisely so that an estimate cannot be read as a measurement. A `None` here
+    means "not measurable from this run", never zero.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    low: float | None = None
+    high: float | None = None
+    point_of_departure: float | None = None
+    unit: str | None = None
+    headline_event_id: str | None = None
+
+
+class OrdinalAssessmentView(BaseModel):
+    """An ordinal band read from the pack -- a cost or an operational risk.
+
+    `class_id` is nullable and the nullability is load-bearing in opposite directions for
+    the two uses (ADR-0073): an absent COST ranks a candidate as free, which is a wrong
+    number, so cost is mandatory in the pack; an absent RISK ranks it nowhere, which is a
+    true statement about the pack, so risk is optional. The view carries both the same way
+    and `provenance_class` is `ASSUMED` for both, because an ordinal band declared by a
+    domain author is never an observation.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    class_id: str | None = None
+    rank: int | None = None
+    span: int = Field(ge=0)
+    provenance_class: ProvenanceClass
+
+
+class RecommendationView(BaseModel):
+    """One ranked act, with prd.md Principle 5 enforced by this type.
+
+    Principle 5: "Every recommendation must identify: expected benefit, confidence,
+    supporting evidence, assumptions." All four are REQUIRED here -- `evidence_item_ids`
+    and `assumptions` carry `min_length=1`, `confidence` is a `ConfidenceView` which itself
+    cannot exist without components, and `expected_benefit` has no default. **An
+    unsupported recommendation cannot be instantiated**, which is the same move ADR-0075
+    made on the artifact, carried to the place a client actually reads.
+
+    That is deliberately stronger than filtering unsupported recommendations out later: a
+    filter is a step somebody can forget, and a type is not.
+
+    There is no single "score" field. `desirability` is present but names the
+    `core.scalarization` function that produced it and the weights it was produced under,
+    so a ranking can never be read under a weighting that did not make it. `pareto_optimal`
+    is carried beside it because it is a stronger statement than a high desirability and is
+    independent of any weighting.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    recommendation_id: str = Field(min_length=1)
+    standing: GraphStandingView
+    node_event_ids: tuple[str, ...] = Field(min_length=1)
+    node_event_types: tuple[str, ...] = Field(min_length=1)
+    description: str = Field(min_length=1)
+    sources: tuple[str, ...] = Field(min_length=1)
+    #: Principle 5, bullet 1.
+    expected_benefit: BenefitRangeView
+    #: Principle 5, bullet 2. A `ConfidenceView`, so it cannot be a bare float.
+    confidence: ConfidenceView
+    #: Principle 5, bullet 3.
+    evidence_item_ids: tuple[str, ...] = Field(min_length=1)
+    #: Principle 5, bullet 4.
+    assumptions: tuple[AssumptionView, ...] = Field(min_length=1)
+    implementation_cost: OrdinalAssessmentView
+    operational_risk: OrdinalAssessmentView
+    #: True when this act is a SET of nodes simulated jointly. The joint figure and the
+    #: naive sum are both published (ADR-0077) so the overlap is visible rather than merely
+    #: corrected.
+    is_set: bool = False
+    is_set_because: str | None = None
+    portfolio_joint_low: float | None = None
+    portfolio_joint_high: float | None = None
+    affected_event_ids: tuple[str, ...] = ()
+    affected_instance_count: int = Field(default=0, ge=0)
+    affected_magnitude: float | None = None
+    affected_magnitude_unit: str | None = None
+    affected_share: float | None = None
+    desirability: float | None = None
+    scalarization: str | None = None
+    objective_weights: tuple[tuple[str, float], ...] = ()
+    pareto_optimal: bool = False
+    provenance_class: ProvenanceClass
+
+
+class WithheldRecommendationView(BaseModel):
+    """An act the engine considered and declined to recommend, with its reason.
+
+    Published beside the recommendations rather than discarded, for the reason the Causal
+    Graph Builder publishes its rejection ledger: on this dataset the engine frequently
+    recommends NOTHING, and a bare empty list says "we found nothing" where the true
+    statement is "we found candidates and every one fell short, here is which test each
+    failed". `reason` is the closed `WithholdingReason` vocabulary, so a client can count
+    by reason without parsing prose.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    node_event_ids: tuple[str, ...] = Field(min_length=1)
+    node_event_types: tuple[str, ...] = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    checked_against: str = Field(min_length=1)
+    detail: str = Field(min_length=1)
+
+
+class RecommendationSetView(BaseModel):
+    """What this run recommends, what it withheld, and why the set may be empty."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    standing: GraphStandingView
+    standing_notice: str | None = None
+    recommendations: tuple[RecommendationView, ...] = ()
+    withheld: tuple[WithheldRecommendationView, ...] = ()
+    withheld_by_reason: tuple[tuple[str, int], ...] = ()
+    #: Why nothing is recommended, when nothing is. Same contract as `empty_because`
+    #: elsewhere: an empty list without its reason invites the wrong reading of a correct
+    #: result.
+    empty_because: str | None = None
+
+
+class ValidationStatusView(BaseModel):
+    """Whether a dataset is fit to reason over, and what is wrong with it if not.
+
+    Two independent measurements, deliberately not merged into one verdict:
+
+    * **Mapping coverage** (module 2) -- which source columns bind to an ontology concept,
+      and every finding an author should see. Answers "is this dataset DESCRIBED?".
+    * **Data quality** (module 1) -- what the pinned file actually contains, with every
+      finding carrying the downstream consequence of ignoring it. Answers "is this dataset
+      USABLE?".
+
+    A dataset can pass either and fail the other, and a single "valid: true/false" would
+    collapse the difference. `quality_report_available` is a third state rather than a
+    quiet false: a report that was never produced and a report that found nothing are
+    different, and only one of them is a reason to proceed.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    dataset_version: str = Field(min_length=1)
+    mapping_id: str = Field(min_length=1)
+    mapping_version: str = Field(min_length=1)
+    ontology_pack: str = Field(min_length=1)
+    ontology_version: str = Field(min_length=1)
+    bound_column_count: int = Field(ge=0)
+    binding_count: int = Field(ge=0)
+    mapping_findings: tuple[dict[str, Any], ...] = ()
+    quality_report_available: bool
+    quality_report_absent_because: str | None = None
+    quality_findings: tuple[dict[str, Any], ...] = ()
+    row_count: int | None = None
+    reject_count: int | None = None
 
 
 class OntologyConceptView(BaseModel):

@@ -90,14 +90,15 @@ renaming one breaks every client — so it is the last place a domain word shoul
 | prd.md §53 example | Actual route | Notes |
 |---|---|---|
 | `POST /dataset/upload` | `POST /v1/jobs` | An import is a stage of a pipeline execution, not a separate upload |
-| `POST /dataset/map` | *(mapping is pack data)* | The mapping is `ontology/packs/<domain>/mapping.yaml` and participates in `dataset_version` (ADR-0035); it is not submitted over HTTP |
+| `POST /dataset/map` | *(mapping is pack data)* | `ontology/packs/<domain>/mapping.yaml`, participating in `dataset_version` through its hash (ADR-0035). Accepting one over HTTP would let a request change an input to `run_id` without changing anything the pin can see. A mapping is edited, reviewed and committed, not POSTed |
+| — | `GET /v1/datasets/{dataset_id}/validation` | What an author actually needs from both rows above: is this dataset **described**, and is it **usable** |
 | `GET /events` | `GET /v1/runs/{run_id}/events` | Cursor-paginated |
 | `GET /timeline/{order}` | `GET /v1/runs/{run_id}/timelines/{process_instance_id}` | |
 | `GET /graph` | `GET /v1/runs/{run_id}/graph` | Subgraph extraction |
 | `GET /root-cause/{order}` | `GET /v1/runs/{run_id}/root-causes/{outcome_event_id}` | Four never-merged views |
 | `GET /counterfactual` | `POST /v1/runs/{run_id}/counterfactuals` | POST, because an intervention set is a structured typed value |
-| `GET /recommendations` | *(not yet served)* | Module 14 exists; the endpoint lands with module 15's explanations |
-| `GET /report/{order}` | *(not yet served)* | Module 15 is `not-started`; the `explanations` stage reports `NOT_RUNNABLE` |
+| `GET /recommendations` | `GET /v1/runs/{run_id}/recommendations` | Every act carries Principle 5's four requirements as **required** fields; the withheld set is published beside the ranked one |
+| `GET /report/{order}` | `GET /v1/runs/{run_id}/reports/{process_instance_id}` | Declared, and always `NOT_RUNNABLE` today: module 15 is `not-started`. The route exists so a client can bind now and so the gap is stated rather than absent |
 | — | `GET /v1/runs/{run_id}/propagation/{seed_event_id}` | prd.md §30's measures |
 | — | `GET /v1/runs`, `GET /v1/runs/compare` | |
 | — | `DELETE /v1/runs/{run_id}/inferred-artifacts` | |
@@ -138,7 +139,9 @@ that reason). The alternative was to synthesize an envelope of empty strings, wh
 **unverifiable while looking verified** — worse than omitting one. So the scope is declared,
 the validator requires the envelope under `RUN_SCOPED` and refuses it under `CATALOG`, and
 the catalog routes are a closed, tested set: `GET /v1/runs`, `GET /v1/jobs`,
-`GET /v1/jobs/{execution_id}`.
+`GET /v1/jobs/{execution_id}` and `GET /v1/datasets/{dataset_id}/validation` — the last
+because **a dataset is not a run**: it is a pack plus a mapping plus a pinned file, where a
+run is those *plus* a rule pack, an engine version and a seed (ADR-0013).
 
 ### How this is enforced
 
@@ -480,6 +483,68 @@ looking at two different packs.
 explicit that recall is bounded by rule coverage; publishing the rules without publishing
 what they fail to cover would satisfy Principle 4's letter and invert its purpose.
 
+### `GET /v1/runs/{run_id}/recommendations`
+
+Capability `READ_RECOMMENDATIONS`. prd.md §55 budget: **5 s, enforced**.
+
+**prd.md Principle 5 is enforced by the type.** "Every recommendation must identify:
+expected benefit, confidence, supporting evidence, assumptions." All four are **required
+fields** on `RecommendationView` — `evidence_item_ids` and `assumptions` carry
+`min_length=1`, and `confidence` is a `ConfidenceView` which itself cannot exist without
+components. An unsupported recommendation is *unconstructable*, which is stronger than
+filtering one out later: a filter is a step somebody can forget.
+
+There is no single "score". `desirability` is carried, but it names the
+`core.scalarization` function that produced it and the weights it was produced under, so a
+ranking can never be read under a weighting that did not make it. `pareto_optimal` sits
+beside it as a stronger, weighting-independent statement.
+
+**The withheld set is published beside the ranked one**, with a tally by reason:
+
+```json
+{
+  "data": {
+    "standing": "STATED",
+    "recommendations": [],
+    "withheld_by_reason": [["BENEFIT_NOT_MEASURABLE", 180]],
+    "empty_because": "Nothing is recommended: 180 candidate act(s) were considered and every one was withheld. By reason: BENEFIT_NOT_MEASURABLE (180). This is a statement about what the engine will STAND BEHIND, not about whether anything could be done — each withholding names the test it failed and what it was checked against. prd.md Principle 5 requires a benefit, a confidence, evidence AND assumptions; a candidate missing any one of them is withheld rather than published without it."
+  }
+}
+```
+
+That is the real output on the reference slice. An empty `recommendations` list on its own
+would say "we found nothing"; the true statement is "we found 180 candidates and every one
+failed a named test", and only the withheld set carries it.
+
+Each `assumption` carries `falsified_by`, because an assumption nobody can test is not an
+assumption.
+
+### `GET /v1/runs/{run_id}/reports/{process_instance_id}`
+
+Capability `READ_INFERRED`. **Always `NOT_RUNNABLE` today** — module 15 (the Explanation
+Generator) is `not-started`. It returns 200 with a full envelope and a `stage_detail`
+naming the module, and points at `/root-causes`, `/propagation` and `/recommendations`,
+which already carry the same findings without the prose.
+
+The route exists rather than being omitted because an absent route is indistinguishable
+from one that ran and found nothing to say — and because a client can bind to the contract
+now and receive prose when the module lands, with no version change.
+
+### `GET /v1/datasets/{dataset_id}/validation` — `CATALOG` scope
+
+Capability `READ_OBSERVED`. Two measurements, reported separately and **never merged into
+one verdict**:
+
+- **Mapping coverage** (module 2, via `inspect_mapping`, which assesses *without* refusing)
+  answers *is this dataset described?* — bound columns, binding count, and every finding an
+  author should see.
+- **Data quality** (module 1's committed report) answers *is this dataset usable?*
+
+A dataset whose every column binds can still be unusable, and one with mapping gaps can
+still measure clean over what it does bind. `quality_report_available` is a **third state**,
+not a quiet false: a report that was never produced and a report that found nothing are
+different, and only one of them is a reason to proceed.
+
 ### `GET /v1/runs`, `GET /v1/runs/compare` — `CATALOG` scope
 
 `compare` names the **inputs that differ**. Two runs differing in one `RunKey` field isolate
@@ -548,7 +613,11 @@ Stated here rather than discovered:
    parsing English or falling back to `rejected_claim_count` (OQ-035).
 6. **`draft body` endpoints may change without an `api_schema_version` bump.** The owning
    module's schema version moves instead.
-7. **Stage wiring exists twice** — here and in `scripts/build_causal_graph.py` (OQ-034).
+7. **`/reports` returns no prose** until module 15 exists. It returns its envelope and
+   says so.
+8. **Dataset validation reads the committed quality report from disk**, so it reflects the
+   last `make import` rather than the file as it stands now.
+9. **Stage wiring exists twice** — here and in `scripts/build_causal_graph.py` (OQ-034).
 
 ---
 

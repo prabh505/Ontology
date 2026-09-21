@@ -261,7 +261,7 @@ ratified** — see OQ-011.
 | 13 | P4 Simulation | Counterfactual Simulator | `counterfactual_engine` | TBD | **built-unverified** | no | 11 unit (edge kinds), 12 unit (validation gates), 5 property, 5 counterfactual-consistency, 48 law (parametrized per source file), 4 determinism, 8 graph (extrapolation), 1 integration budget | 2026-09-07 |
 | 14 | P4 Simulation | Intervention Optimizer | `recommendation_engine` | TBD | **built-unverified** | no | 6 gate unit, 10 Principle-5 type, 17 scalarization (in `unit/core/`), 10 cut-set, 5 portfolio, 40 law (parametrized per source file), 3 added to `tests/counterfactual/`, 4 determinism, 1 integration budget | 2026-09-07 |
 | 15 | P5 Surface | Explanation Generator | `explanation_engine` | TBD | not-started | no | none | — |
-| 16 | P5 Surface | Visualization API | `api` | TBD | **built-unverified** | **shell frozen** (ADR-0085) | 12 law (envelope over the route table AND the AST, parametrized per source file), 137 api (permission matrix over every role x every route, envelope completeness, audit completeness, error non-leakage, OpenAPI contract, NOT_RUNNABLE), 9 determinism, 4 integration budget | 2026-09-20 |
+| 16 | P5 Surface | Visualization API | `api` | TBD | **built-unverified** | **shell frozen** (ADR-0085) | 12 law (envelope over the route table AND the AST, parametrized per source file), 168 api (permission matrix over every role x every route, envelope completeness, audit completeness, error non-leakage, OpenAPI contract, NOT_RUNNABLE, and Principle 5 enforced by the type), 9 determinism, 4 integration budget | 2026-09-20 |
 
 **The Causal Graph Builder landed on 2026-09-04 (ADR-0054 through ADR-0056).** Like the
 ontology layer and the rule engine it is **not** one of the 16 modules — it is the assembly
@@ -1382,4 +1382,30 @@ Append-only. One line per meaningful change. Newest at the bottom. Never edit a 
             ids per request; a refused request audited as a disclosure; and an envelope
             execution_id that a comment said was replaced and never was -- which made the
             determinism comparison pass WITHOUT needing its own exclusion. Suite 1,590 green.
+2026-09-21  The prd.md section 53 surface completed, and a defect that had already shipped.
+            Three endpoints were missing from module 16's first pass. `/recommendations`
+            is now served -- module 14 was already built and only the wiring was absent --
+            with **prd.md Principle 5 enforced by the TYPE**: expected benefit, confidence,
+            supporting evidence and assumptions are all REQUIRED on RecommendationView,
+            with min_length=1 on the last two, so an unsupported recommendation is
+            unconstructable rather than filtered out downstream. The withheld set is
+            published beside the ranked one with a tally by reason, because on this slice
+            the engine recommends NOTHING: 180 candidates considered, all withheld as
+            BENEFIT_NOT_MEASURABLE, and an empty list alone would say "we found nothing"
+            where the true statement is "we found 180 and every one failed a named test".
+            `/reports/{process_instance_id}` is DECLARED and always NOT_RUNNABLE, naming
+            module 15 -- an omitted route makes "nothing to say" and "nobody built the
+            thing that says it" indistinguishable, which is the same failure the declared
+            pipeline stages avoid. `/datasets/{id}/validation` reports mapping coverage and
+            data quality SEPARATELY and never as one verdict, under CATALOG scope because a
+            dataset is not a run. A SIXTH defect, and the first to have shipped:
+            `/counterfactuals` raised AttributeError on every call -- `_simulation_context`
+            read `joint_cause_groups` from a PromotedGraph that carries `joint_groups` --
+            and no test caught it because none had ever sent a well-formed intervention;
+            the permission-matrix test sends one and asserts only that it is not a 403. A
+            route exercised only for its status code is a route nobody has run. The fix
+            carried a second correction: joint groups and loops are properties of
+            PROMOTION, so both are empty under UNPROMOTED_DIAGNOSTIC rather than borrowed
+            from a graph the query is not walking -- which the script had right, with a
+            comment saying why, and the facade had not copied. Suite 1,621 green.
 ```
